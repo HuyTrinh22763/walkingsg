@@ -1,0 +1,122 @@
+import { StyleSheet } from 'react-native';
+import { ThemeColors } from '../../constants/theme';
+
+/* Section Nav Active */
+export const styles = StyleSheet.create({
+  screenContainer: {
+    flex: 1,
+    backgroundColor: ThemeColors.mapLand,
+  },
+  navActive_innerContainer: {
+    flex: 1,
+    position: 'relative',
+  },
+  navActive_innerTopGuidance: {
+    position: 'absolute',
+    top: 16,
+    left: 16,
+    right: 16,
+    gap: 8,
+    zIndex: 10,
+  },
+  navActive_innerTurnBanner: {
+    backgroundColor: ThemeColors.canopyDeep,
+    borderRadius: 12,
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    shadowColor: '#221f18',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  navActive_innerTurnIconBox: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  navActive_innerTurnTextCol: {
+    flex: 1,
+    gap: 2,
+  },
+  navActive_innerTurnMain: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#ffffff',
+  },
+  navActive_innerTurnSub: {
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.85)',
+  },
+  navActive_innerHazardBanner: {
+    backgroundColor: ThemeColors.hazardTint,
+    borderWidth: 1,
+    borderColor: ThemeColors.hazard,
+    borderRadius: 10,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    shadowColor: '#221f18',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  navActive_innerHazardBannerText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '700',
+    color: ThemeColors.hazard,
+  },
+  navActive_innerBottomHud: {
+    position: 'absolute',
+    bottom: 16,
+    left: 16,
+    right: 16,
+    backgroundColor: ThemeColors.card,
+    borderWidth: 1,
+    borderColor: ThemeColors.lineStrong,
+    borderRadius: 12,
+    padding: 14,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    shadowColor: '#221f18',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 4,
+    zIndex: 10,
+  },
+  navActive_innerEtaGroup: {
+    gap: 2,
+  },
+  navActive_innerEtaTime: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: ThemeColors.ink,
+    lineHeight: 26,
+  },
+  navActive_innerEtaDist: {
+    fontSize: 12,
+    color: ThemeColors.inkSoft,
+  },
+  navActive_innerButtonReport: {
+    backgroundColor: ThemeColors.clayTint,
+    borderWidth: 1,
+    borderColor: ThemeColors.clay,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  navActive_innerButtonReportText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: ThemeColors.clay,
+  },
+});
+/* End Section Nav Active */

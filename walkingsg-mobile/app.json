@@ -1,0 +1,20 @@
+{
+  "expo": {
+    "name": "WalkingSG",
+    "slug": "walkingsg-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#f3eee1"
+      }
+    },
+    "plugins": [
+      "expo-asset"
+    ]
+  }
+}
