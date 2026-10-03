@@ -1,0 +1,3 @@
+### Health Check Endpoint
+GET http://localhost:3052/health
+Content-Type: application/json
