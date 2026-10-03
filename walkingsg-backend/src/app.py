@@ -9,8 +9,6 @@ from src.core.exception_handlers import register_exception_handlers
 from src.dbs.init_mongodb import Database
 from src.routes.index import router
 
-
-@asynccontextmanager
 async def lifespan(app: FastAPI):
     await Database.connect(get_settings())
     yield
