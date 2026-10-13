@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     db_name: str = "walkingsg"
     db_max_pool_size: int = 50
     jwt_secret: SecretStr
+    api_key: SecretStr = SecretStr("walkingsg-secret-api-key")
     onemap_api_key: SecretStr = SecretStr("mock_key")
 
 def get_settings() -> Settings:
