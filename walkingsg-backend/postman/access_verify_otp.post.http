@@ -1,0 +1,8 @@
+### Access Verify OTP Endpoint
+POST http://localhost:3052/v1/api/access/verify-otp
+Content-Type: application/json
+
+{
+  "user_email": "user@example.com",
+  "otp_code": "123456"
+}

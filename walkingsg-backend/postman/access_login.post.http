@@ -1,0 +1,8 @@
+### Access Login Endpoint
+POST http://localhost:3052/v1/api/access/login
+Content-Type: application/json
+
+{
+  "user_email": "user@example.com",
+  "password": "Password@123"
+}

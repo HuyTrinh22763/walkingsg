@@ -1,0 +1,5 @@
+### Access Logout Endpoint
+POST http://localhost:3052/v1/api/access/logout
+Content-Type: application/json
+x-client-id: 67123456789abcdef0123456
+authorization: Bearer replace_with_valid_access_token

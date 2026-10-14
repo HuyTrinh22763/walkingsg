@@ -1,0 +1,7 @@
+### Access Resend OTP Endpoint
+POST http://localhost:3052/v1/api/access/resend-otp
+Content-Type: application/json
+
+{
+  "user_email": "user@example.com"
+}
