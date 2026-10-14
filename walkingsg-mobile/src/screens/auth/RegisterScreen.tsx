@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, Modal, Alert } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, Modal, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LeafIcon, EyeIcon, CheckCircleIcon, CircleOutlineIcon, MailIcon } from '../../components/SvgIcons';
 import { useApp } from '../../context/AppContext';
@@ -7,51 +7,83 @@ import { styles } from './RegisterScreen.styles';
 
 export default function RegisterScreen({ navigation }: any) {
   // Section Auth Register State
-  const { updateUser } = useApp();
-  const [email, setEmail] = useState('sam.tan@gmail.com');
-  const [password, setPassword] = useState('SecurePass@123');
+  const { signup, verifyOtp, resendOtp } = useApp();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
-  // OTP Verification State (Use Case 1.1-1)
+  // OTP Verification State
   const [showOtpModal, setShowOtpModal] = useState(false);
-  const [otpCode, setOtpCode] = useState('829104');
-  const [otpTimer, setOtpTimer] = useState('09:48');
+  const [otpCode, setOtpCode] = useState('');
+  const [otpTimer, setOtpTimer] = useState('10:00');
+  const [isVerifying, setIsVerifying] = useState(false);
 
   const lengthMet = password.length >= 8;
-  const specialMet = /[@#$%^&*]/.test(password);
+  const specialMet = /[^a-zA-Z0-9\s]/.test(password);
 
-  const handleRegisterClick = () => {
+  const handleRegisterClick = async () => {
     if (!email.trim() || !email.includes('@')) {
       Alert.alert('Invalid Email', 'Please enter a valid email address.');
       return;
     }
     if (!lengthMet || !specialMet) {
-      Alert.alert('Weak Password', 'Password must be at least 8 characters and contain at least one special character (@, #, $, %, ^, &, *).');
+      Alert.alert('Weak Password', 'Password must be at least 8 characters and contain at least one special character.');
       return;
     }
-    // Trigger OTP Verification (REQ-AUTH-01.5)
-    setShowOtpModal(true);
+
+    setIsLoading(true);
+    try {
+      await signup({
+        user_email: email.trim(),
+        password: password,
+      });
+      setShowOtpModal(true);
+      Alert.alert(
+        'Verification Code Sent',
+        'A 6-digit verification code has been dispatched. Check your server console (or email in production).'
+      );
+    } catch (error: any) {
+      Alert.alert('Registration Failed', error.message || 'Unable to register.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleVerifyOtp = () => {
-    if (otpCode.length !== 6) {
+  const handleVerifyOtp = async () => {
+    if (otpCode.trim().length !== 6) {
       Alert.alert('Invalid Code', 'Please enter a valid 6-digit verification code.');
       return;
     }
-    // Activate account
-    updateUser({ email: email.trim() });
-    setShowOtpModal(false);
-    Alert.alert('Account Verified', 'Your WalkingSG account has been activated!', [
-      {
-        text: 'Get Started',
-        onPress: () => navigation.replace('MainTabs', { screen: 'Profile' }),
-      },
-    ]);
+
+    setIsVerifying(true);
+    try {
+      await verifyOtp({
+        user_email: email.trim(),
+        otp_code: otpCode.trim(),
+      });
+      setShowOtpModal(false);
+      Alert.alert('Account Verified', 'Your WalkingSG account has been activated! Please log in.', [
+        {
+          text: 'Go to Login',
+          onPress: () => navigation.navigate('Login'),
+        },
+      ]);
+    } catch (error: any) {
+      Alert.alert('Verification Failed', error.message || 'Invalid or expired code.');
+    } finally {
+      setIsVerifying(false);
+    }
   };
 
-  const handleResendOtp = () => {
-    setOtpTimer('10:00');
-    Alert.alert('Code Resent', `A new 6-digit code has been sent to ${email}.`);
+  const handleResendOtp = async () => {
+    try {
+      await resendOtp({ user_email: email.trim() });
+      setOtpTimer('10:00');
+      Alert.alert('Code Resent', `A new 6-digit code has been sent for ${email}. Check your server console.`);
+    } catch (error: any) {
+      Alert.alert('Resend Failed', error.message || 'Unable to resend OTP.');
+    }
   };
   // End Section Auth Register State
 
@@ -76,6 +108,7 @@ export default function RegisterScreen({ navigation }: any) {
                 onChangeText={setEmail}
                 autoCapitalize="none"
                 keyboardType="email-address"
+                editable={!isLoading}
               />
             </View>
 
@@ -87,6 +120,7 @@ export default function RegisterScreen({ navigation }: any) {
                   value={password}
                   onChangeText={setPassword}
                   secureTextEntry={!showPassword}
+                  editable={!isLoading}
                 />
                 <TouchableOpacity
                   style={styles.authRegister_innerTogglePwd}
@@ -108,17 +142,22 @@ export default function RegisterScreen({ navigation }: any) {
               <View style={styles.authRegister_innerCriteriaItem}>
                 {specialMet ? <CheckCircleIcon size={16} /> : <CircleOutlineIcon size={16} />}
                 <Text style={[styles.authRegister_innerCriteriaText, specialMet && styles.authRegister_innerCriteriaText_met]}>
-                  One special character: @ # $ % ^ & *
+                  One special character
                 </Text>
               </View>
             </View>
 
             <TouchableOpacity
-              style={styles.authRegister_innerButtonSubmit}
+              style={[styles.authRegister_innerButtonSubmit, isLoading && { opacity: 0.7 }]}
               onPress={handleRegisterClick}
               activeOpacity={0.85}
+              disabled={isLoading}
             >
-              <Text style={styles.authRegister_innerButtonSubmitText}>Create account</Text>
+              {isLoading ? (
+                <ActivityIndicator color="#ffffff" />
+              ) : (
+                <Text style={styles.authRegister_innerButtonSubmitText}>Create account</Text>
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -137,7 +176,7 @@ export default function RegisterScreen({ navigation }: any) {
         {/* End Section Auth Register */}
       </ScrollView>
 
-      {/* Modal OTP Verification (Use Case 1.1-1) */}
+      {/* Modal OTP Verification */}
       <Modal visible={showOtpModal} transparent animationType="fade">
         <View style={styles.authRegister_innerModalOverlay}>
           <View style={styles.authRegister_innerModalCard}>
@@ -155,6 +194,7 @@ export default function RegisterScreen({ navigation }: any) {
               onChangeText={setOtpCode}
               keyboardType="number-pad"
               maxLength={6}
+              editable={!isVerifying}
             />
 
             <Text style={styles.authRegister_innerModalExpiry}>
@@ -169,16 +209,22 @@ export default function RegisterScreen({ navigation }: any) {
 
             <View style={styles.authRegister_innerModalActions}>
               <TouchableOpacity
-                style={styles.authRegister_innerModalBtnVerify}
+                style={[styles.authRegister_innerModalBtnVerify, isVerifying && { opacity: 0.7 }]}
                 onPress={handleVerifyOtp}
                 activeOpacity={0.85}
+                disabled={isVerifying}
               >
-                <Text style={styles.authRegister_innerModalBtnVerifyText}>Verify & Activate</Text>
+                {isVerifying ? (
+                  <ActivityIndicator color="#ffffff" />
+                ) : (
+                  <Text style={styles.authRegister_innerModalBtnVerifyText}>Verify & Activate</Text>
+                )}
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.authRegister_innerModalBtnCancel}
                 onPress={() => setShowOtpModal(false)}
                 activeOpacity={0.7}
+                disabled={isVerifying}
               >
                 <Text style={styles.authRegister_innerModalBtnCancelText}>Cancel</Text>
               </TouchableOpacity>

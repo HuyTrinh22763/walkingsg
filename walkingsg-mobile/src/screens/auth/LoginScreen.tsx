@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LeafIcon } from '../../components/SvgIcons';
 import { useApp } from '../../context/AppContext';
@@ -7,15 +7,29 @@ import { styles } from './LoginScreen.styles';
 
 export default function LoginScreen({ navigation }: any) {
   // Section Auth Login State
-  const { updateUser } = useApp();
-  const [email, setEmail] = React.useState('sam.tan@gmail.com');
-  const [password, setPassword] = React.useState('••••••••');
+  const { login } = useApp();
+  const [email, setEmail] = useState('huy@example.com');
+  const [password, setPassword] = useState('Password@123');
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleLogin = () => {
-    if (email.trim()) {
-      updateUser({ email: email.trim() });
+  const handleLogin = async () => {
+    if (!email.trim() || !password.trim()) {
+      Alert.alert('Required Fields', 'Please enter your email and password.');
+      return;
     }
-    navigation.replace('MainTabs');
+
+    setIsLoading(true);
+    try {
+      await login({
+        user_email: email.trim(),
+        password: password,
+      });
+      navigation.replace('MainTabs');
+    } catch (error: any) {
+      Alert.alert('Login Failed', error.message || 'Unable to log in. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
   // End Section Auth Login State
 
@@ -43,6 +57,7 @@ export default function LoginScreen({ navigation }: any) {
                 onChangeText={setEmail}
                 autoCapitalize="none"
                 keyboardType="email-address"
+                editable={!isLoading}
               />
             </View>
 
@@ -53,15 +68,21 @@ export default function LoginScreen({ navigation }: any) {
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry
+                editable={!isLoading}
               />
             </View>
 
             <TouchableOpacity
-              style={styles.authLogin_innerButtonSubmit}
+              style={[styles.authLogin_innerButtonSubmit, isLoading && { opacity: 0.7 }]}
               onPress={handleLogin}
               activeOpacity={0.85}
+              disabled={isLoading}
             >
-              <Text style={styles.authLogin_innerButtonSubmitText}>Log in</Text>
+              {isLoading ? (
+                <ActivityIndicator color="#ffffff" />
+              ) : (
+                <Text style={styles.authLogin_innerButtonSubmitText}>Log in</Text>
+              )}
             </TouchableOpacity>
           </View>
 
