@@ -1,4 +1,4 @@
-import { API_BASE_URL } from '../constants/api';
+import { API_BASE_URL, IS_DEV } from '../constants/api';
 
 export interface ApiResponse<T = any> {
   message?: string;
@@ -62,7 +62,15 @@ export async function apiRequest<T = any>(
       data?.message ||
       data?.detail ||
       `Request failed with status ${response.status}`;
-    throw new Error(errorMessage);
+    const err = new Error(errorMessage);
+    if (IS_DEV) {
+      console.error(`[apiClient Error] ${method} ${url} -> ${response.status}`, {
+        message: errorMessage,
+        data,
+        stack: err.stack,
+      });
+    }
+    throw err;
   }
 
   return (data?.metadata !== undefined ? data.metadata : data) as T;

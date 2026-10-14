@@ -25,5 +25,8 @@ const getDevHostIp = (): string => {
   return 'localhost';
 };
 
+export const IS_DEV =
+  typeof __DEV__ !== 'undefined' ? __DEV__ : process.env.NODE_ENV !== 'production';
+
 export const API_BASE_URL =
   process.env.EXPO_PUBLIC_API_URL || `http://${getDevHostIp()}:3052/v1/api`;
