@@ -139,13 +139,43 @@ async def test_resend_otp_success(mock_dependencies):
     otp_repo = mock_dependencies["otp_repo"]
     mailer = mock_dependencies["mailer"]
 
-    mock_user = MagicMock(id=PydanticObjectId())
+    mock_user = MagicMock(id=PydanticObjectId(), is_verified=False)
     user_repo.find_by_email.return_value = mock_user
 
     res = await service.resend_otp(ResendOtpRequest(user_email="test@example.com"))
     assert res is True
     assert otp_repo.delete_by_user_id.called
     assert len(mailer.sent_emails) == 1
+
+
+@pytest.mark.asyncio
+async def test_resend_otp_already_verified(mock_dependencies):
+    service = mock_dependencies["service"]
+    user_repo = mock_dependencies["user_repo"]
+
+    mock_user = MagicMock(id=PydanticObjectId(), is_verified=True)
+    user_repo.find_by_email.return_value = mock_user
+
+    with pytest.raises(BadRequestError) as exc_info:
+        await service.resend_otp(ResendOtpRequest(user_email="test@example.com"))
+    assert "already verified" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_login_unverified_account(mock_dependencies):
+    service = mock_dependencies["service"]
+    user_repo = mock_dependencies["user_repo"]
+
+    mock_user = MagicMock(
+        id=PydanticObjectId(), user_email="test@example.com", is_verified=False
+    )
+    user_repo.find_by_email.return_value = mock_user
+
+    with pytest.raises(ForbiddenError) as exc_info:
+        await service.login(
+            LoginRequest(user_email="test@example.com", password="Password@123")
+        )
+    assert "not verified" in str(exc_info.value)
 
 
 @pytest.mark.asyncio
@@ -157,7 +187,9 @@ async def test_login_success(mock_dependencies):
 
     pw_hash = await hash_password("Password@123")
     user_id = PydanticObjectId()
-    mock_user = MagicMock(id=user_id, user_email="test@example.com", is_locked=False)
+    mock_user = MagicMock(
+        id=user_id, user_email="test@example.com", is_verified=True, is_locked=False
+    )
     mock_creds = MagicMock(id=PydanticObjectId(), password_hash=pw_hash)
 
     user_repo.find_by_email.return_value = mock_user
@@ -180,7 +212,10 @@ async def test_login_invalid_password_lockout_rule(mock_dependencies):
 
     pw_hash = await hash_password("CorrectPassword@123")
     mock_user = MagicMock(
-        id=PydanticObjectId(), is_locked=False, lock_expires_at=None
+        id=PydanticObjectId(),
+        is_verified=True,
+        is_locked=False,
+        lock_expires_at=None,
     )
     mock_creds = MagicMock(id=PydanticObjectId(), password_hash=pw_hash)
 
@@ -215,7 +250,9 @@ async def test_login_locked_account(mock_dependencies):
     user_repo = mock_dependencies["user_repo"]
 
     active_lock = utc_now() + timedelta(minutes=10)
-    mock_user = MagicMock(is_locked=True, lock_expires_at=active_lock)
+    mock_user = MagicMock(
+        is_verified=True, is_locked=True, lock_expires_at=active_lock
+    )
     user_repo.find_by_email.return_value = mock_user
 
     with pytest.raises(ForbiddenError):

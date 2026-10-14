@@ -17,6 +17,19 @@ class UserRepository:
         await user.insert()
         return user
 
+    async def set_verified(
+        self,
+        *,
+        user_id: PydanticObjectId,
+        is_verified: bool = True,
+    ) -> UserModel | None:
+        user = await UserModel.get(user_id)
+        if user is None:
+            return None
+        user.is_verified = is_verified
+        await user.save()
+        return user
+
     async def set_lockout(
         self,
         *,

@@ -11,6 +11,7 @@ COLLECTION_NAME = "users"
 
 class UserModel(Document):
     user_email: str
+    is_verified: bool = False
     is_locked: bool = False
     lock_expires_at: datetime | None = None
     created_at: datetime = Field(default_factory=utc_now)

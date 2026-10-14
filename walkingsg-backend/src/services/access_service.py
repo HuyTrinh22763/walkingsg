@@ -115,12 +115,15 @@ class AccessService:
             raise BadRequestError("Invalid or expired code")
 
         await self._otp_repo.mark_used(otp_id=otp.id)
+        await self._user_repo.set_verified(user_id=user.id, is_verified=True)
         return OtpVerifyOut(is_verified=True)
 
     async def resend_otp(self, payload: ResendOtpRequest) -> bool:
         user = await self._user_repo.find_by_email(email=payload.user_email)
         if user is None:
             raise NotFoundError("User not found")
+        if user.is_verified:
+            raise BadRequestError("Account is already verified")
 
         await self._otp_repo.delete_by_user_id(user_id=user.id)
         otp_code = generate_numeric_otp(6)
@@ -137,6 +140,8 @@ class AccessService:
         user = await self._user_repo.find_by_email(email=payload.user_email)
         if user is None:
             raise AuthFailureError("Invalid email or password")
+        if not user.is_verified:
+            raise ForbiddenError("Account is not verified. Please verify your OTP first.")
 
         now = utc_now()
         if user.is_locked:

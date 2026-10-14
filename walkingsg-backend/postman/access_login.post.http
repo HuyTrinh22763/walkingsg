@@ -3,6 +3,6 @@ POST http://localhost:3052/v1/api/access/login
 Content-Type: application/json
 
 {
-  "user_email": "user@example.com",
-  "password": "Password@123"
+  "user_email": "hoanghuy190607@gmail.com",
+  "password": "NewPassword@123"
 }
