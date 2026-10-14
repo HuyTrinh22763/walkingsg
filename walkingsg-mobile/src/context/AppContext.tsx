@@ -1,6 +1,18 @@
 import React, { createContext, useContext, useState, ReactNode, ReactElement } from 'react';
 import type { RouteModel, FeedPostModel } from '../constants/mockData';
 import { INITIAL_ROUTES, INITIAL_FEED_POSTS } from '../constants/mockData';
+import { authService } from '../services/authService';
+import type {
+  SignUpRequest,
+  SignUpResponse,
+  OtpVerifyRequest,
+  OtpVerifyResponse,
+  ResendOtpRequest,
+  LoginRequest, 
+  LoginResponse,
+  ForgotPasswordRequest,
+  ResetPasswordRequest,
+} from '../types/auth';
 
 // Section App Context
 export interface UserPreferences {
@@ -15,10 +27,24 @@ export interface UserPreferences {
   isDeclared: boolean;
 }
 
+export interface AuthSession {
+  userId: string | null;
+  accessToken: string | null;
+  refreshToken: string | null;
+  isAuthenticated: boolean;
+}
+
 interface AppContextType {
   user: UserPreferences;
+  auth: AuthSession;
   updateUser: (updates: Partial<UserPreferences>) => void;
-  logoutUser: () => void;
+  signup: (payload: SignUpRequest) => Promise<SignUpResponse>;
+  verifyOtp: (payload: OtpVerifyRequest) => Promise<OtpVerifyResponse>;
+  resendOtp: (payload: ResendOtpRequest) => Promise<boolean>;
+  login: (payload: LoginRequest) => Promise<LoginResponse>;
+  forgotPassword: (payload: ForgotPasswordRequest) => Promise<boolean>;
+  resetPassword: (payload: ResetPasswordRequest) => Promise<boolean>;
+  logoutUser: () => Promise<void>;
   deleteAccount: () => void;
   routes: RouteModel[];
   selectedSort: 'match' | 'stairs' | 'shade';
@@ -43,10 +69,18 @@ const DEFAULT_USER: UserPreferences = {
   isDeclared: true,
 };
 
+const DEFAULT_AUTH: AuthSession = {
+  userId: null,
+  accessToken: null,
+  refreshToken: null,
+  isAuthenticated: false,
+};
+
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export function AppProvider({ children }: { children?: ReactNode }): ReactElement {
   const [user, setUser] = useState<UserPreferences>(DEFAULT_USER);
+  const [auth, setAuth] = useState<AuthSession>(DEFAULT_AUTH);
 
   const [routes] = useState<RouteModel[]>(INITIAL_ROUTES);
   const [selectedSort, setSelectedSort] = useState<'match' | 'stairs' | 'shade'>('match');
@@ -58,13 +92,52 @@ export function AppProvider({ children }: { children?: ReactNode }): ReactElemen
     setUser((prev: UserPreferences) => ({ ...prev, ...updates }));
   };
 
-  const logoutUser = () => {
-    // Terminate session, preserve baseline defaults for next sign in
+  const signup = async (payload: SignUpRequest): Promise<SignUpResponse> => {
+    return await authService.signup(payload);
+  };
+
+  const verifyOtp = async (payload: OtpVerifyRequest): Promise<OtpVerifyResponse> => {
+    return await authService.verifyOtp(payload);
+  };
+
+  const resendOtp = async (payload: ResendOtpRequest): Promise<boolean> => {
+    return await authService.resendOtp(payload);
+  };
+
+  const login = async (payload: LoginRequest): Promise<LoginResponse> => {
+    const res = await authService.login(payload);
+    setAuth({
+      userId: res.user_id,
+      accessToken: res.access_token,
+      refreshToken: res.refresh_token,
+      isAuthenticated: true,
+    });
+    setUser((prev: UserPreferences) => ({ ...prev, email: res.user_email }));
+    return res;
+  };
+
+  const forgotPassword = async (payload: ForgotPasswordRequest): Promise<boolean> => {
+    return await authService.forgotPassword(payload);
+  };
+
+  const resetPassword = async (payload: ResetPasswordRequest): Promise<boolean> => {
+    return await authService.resetPassword(payload);
+  };
+
+  const logoutUser = async () => {
+    if (auth.accessToken && auth.userId) {
+      try {
+        await authService.logout(auth.accessToken, auth.userId);
+      } catch {
+        // Suppress network errors on logout to ensure client state cleans up regardless
+      }
+    }
+    setAuth(DEFAULT_AUTH);
     setUser(DEFAULT_USER);
   };
 
   const deleteAccount = () => {
-    // PDPA erasure: purge preferences and user data back to unconfigured state
+    setAuth(DEFAULT_AUTH);
     setUser({
       fullName: '',
       email: '',
@@ -96,7 +169,14 @@ export function AppProvider({ children }: { children?: ReactNode }): ReactElemen
     <AppContext.Provider
       value={{
         user,
+        auth,
         updateUser,
+        signup,
+        verifyOtp,
+        resendOtp,
+        login,
+        forgotPassword,
+        resetPassword,
         logoutUser,
         deleteAccount,
         routes,
