@@ -1,0 +1,4 @@
+### Profile Get Endpoint
+GET http://localhost:3052/v1/api/profile
+x-client-id: <user_id from login>
+authorization: <access_token from login>

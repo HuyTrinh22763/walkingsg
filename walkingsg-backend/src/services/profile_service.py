@@ -1,7 +1,7 @@
 from beanie import PydanticObjectId
 
 from src.core.error_response import BadRequestError, NotFoundError
-from src.model.profile_model import MobilityNeeds, ProfileModel
+from src.model.profile_model import MobilityNeeds
 from src.model.repository.credentials_repo import CredentialsRepository
 from src.model.repository.otp_repo import OtpRepository
 from src.model.repository.profile_repo import ProfileRepository
@@ -28,7 +28,7 @@ class ProfileService:
     async def get_profile(self, user_id: PydanticObjectId) -> ProfileOut:
         profile = await self._profile_repo.find_by_user_id(user_id=user_id)
         if profile is None:
-            profile = await self._profile_repo.create(profile=ProfileModel(user_id=user_id))
+            profile = await self._profile_repo.create(user_id=user_id)
         return ProfileOut.model_validate(profile)
 
     async def update_profile(
@@ -40,9 +40,7 @@ class ProfileService:
 
         profile = await self._profile_repo.update_by_user_id(user_id=user_id, fields=fields)
         if profile is None:
-            profile = await self._profile_repo.create(
-                profile=ProfileModel(user_id=user_id, **fields)
-            )
+            profile = await self._profile_repo.create(user_id=user_id, **fields)
         return ProfileOut.model_validate(profile)
 
     async def delete_account(

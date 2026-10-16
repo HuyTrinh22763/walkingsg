@@ -9,8 +9,10 @@ class ProfileRepository:
     async def find_by_user_id(self, *, user_id: PydanticObjectId) -> ProfileModel | None:
         return await ProfileModel.find_one(ProfileModel.user_id == user_id)
 
-    async def create(self, *, profile: ProfileModel) -> ProfileModel:
-        return await profile.insert()
+    async def create(self, *, user_id: PydanticObjectId, **fields: Any) -> ProfileModel:
+        profile = ProfileModel(user_id=user_id, **fields)
+        await profile.insert()
+        return profile
 
     async def update_by_user_id(
         self, *, user_id: PydanticObjectId, fields: dict[str, Any]
