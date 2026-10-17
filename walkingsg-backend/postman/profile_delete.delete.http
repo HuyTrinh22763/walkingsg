@@ -1,0 +1,9 @@
+### Profile Delete Endpoint
+DELETE http://localhost:3052/v1/api/profile
+Content-Type: application/json
+x-client-id: <user_id from login>
+authorization: <access_token from login>
+
+{
+  "confirmation": true
+}

@@ -1,0 +1,14 @@
+### Profile Update Endpoint
+PUT http://localhost:3052/v1/api/profile
+Content-Type: application/json
+x-client-id: <user_id from login>
+authorization: <access_token from login>
+
+{
+  "name": "Natsu",
+  "age": 21,
+  "mobility_needs": "Wheelchair",
+  "heat_uv_sensitivity": "High",
+  "max_stairs_per_route": 10,
+  "preferred_pace": "Slow"
+}
