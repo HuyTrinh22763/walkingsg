@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { TopBarHeader } from '../../components/TopBarHeader';
 import { useApp } from '../../context/AppContext';
@@ -7,15 +7,27 @@ import { styles } from './ProfileDeclarationScreen.styles';
 
 export default function ProfileDeclarationScreen({ navigation }: any) {
   // Section Profile Declaration Logic
-  const { user, updateUser } = useApp();
+  const { user, saveProfile } = useApp();
   const [fullName, setFullName] = useState(user.fullName);
   const [confirmed, setConfirmed] = useState(user.isDeclared);
+  const [isSaving, setIsSaving] = useState(false);
 
-  const handleSave = () => {
-    updateUser({ fullName, isDeclared: confirmed });
-    Alert.alert('Saved', 'Personal declaration confirmed.', [
-      { text: 'OK', onPress: () => navigation.goBack() }
-    ]);
+  const handleSave = async () => {
+    if (!confirmed) {
+      Alert.alert('Please confirm', 'Tick the box to confirm your details are accurate.');
+      return;
+    }
+    setIsSaving(true);
+    try {
+      await saveProfile({ fullName, isDeclared: true });
+      Alert.alert('Saved', 'Personal declaration confirmed.', [
+        { text: 'OK', onPress: () => navigation.goBack() },
+      ]);
+    } catch (error) {
+      Alert.alert('Could not save', error instanceof Error ? error.message : 'Something went wrong');
+    } finally {
+      setIsSaving(false);
+    }
   };
   // End Section Profile Declaration Logic
 
@@ -26,7 +38,7 @@ export default function ProfileDeclarationScreen({ navigation }: any) {
       <ScrollView contentContainerStyle={styles.profileDeclaration_innerWrap} keyboardShouldPersistTaps="handled">
         {/* Section Profile Declaration */}
         <Text style={styles.profileDeclaration_innerNotice}>
-          Pre-filled from your last saved preferences · updated 3 days ago
+          Pre-filled from your last saved preferences
         </Text>
 
         <View style={styles.profileDeclaration_innerForm}>
@@ -36,6 +48,7 @@ export default function ProfileDeclarationScreen({ navigation }: any) {
               style={styles.profileDeclaration_innerInput}
               value={fullName}
               onChangeText={setFullName}
+              editable={!isSaving}
             />
           </View>
 
@@ -43,7 +56,7 @@ export default function ProfileDeclarationScreen({ navigation }: any) {
             <Text style={styles.profileDeclaration_innerLabel}>Age</Text>
             <TextInput
               style={styles.profileDeclaration_innerInput}
-              value={String(user.age)}
+              value={user.age === null ? 'Not set' : String(user.age)}
               editable={false}
             />
           </View>
@@ -78,6 +91,7 @@ export default function ProfileDeclarationScreen({ navigation }: any) {
           <TouchableOpacity
             style={styles.profileDeclaration_innerCheckboxRow}
             onPress={() => setConfirmed(prev => !prev)}
+            disabled={isSaving}
             activeOpacity={0.8}
           >
             <View style={styles.profileDeclaration_innerCheckboxSquare}>
@@ -91,9 +105,14 @@ export default function ProfileDeclarationScreen({ navigation }: any) {
           <TouchableOpacity
             style={styles.profileDeclaration_innerButtonSave}
             onPress={handleSave}
+            disabled={isSaving}
             activeOpacity={0.85}
           >
-            <Text style={styles.profileDeclaration_innerButtonSaveText}>Save & Confirm</Text>
+            {isSaving ? (
+              <ActivityIndicator color="#ffffff" />
+            ) : (
+              <Text style={styles.profileDeclaration_innerButtonSaveText}>Save & Confirm</Text>
+            )}
           </TouchableOpacity>
         </View>
         {/* End Section Profile Declaration */}

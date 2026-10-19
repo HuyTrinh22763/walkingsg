@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Modal, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Modal, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { TopBarHeader } from '../../components/TopBarHeader';
 import { ChevronRightIcon, LogoutIcon, TrashIcon } from '../../components/SvgIcons';
@@ -13,6 +13,7 @@ export default function SettingsScreen({ navigation }: any) {
   // Modals
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const handleConfirmLogout = () => {
     setShowLogoutModal(false);
@@ -23,20 +24,27 @@ export default function SettingsScreen({ navigation }: any) {
     });
   };
 
-  const handleConfirmDelete = () => {
-    setShowDeleteModal(false);
-    deleteAccount();
-    Alert.alert('Account Deleted', 'Your account and personal data have been purged per Singapore PDPA.', [
-      {
-        text: 'OK',
-        onPress: () => {
-          navigation.reset({
-            index: 0,
-            routes: [{ name: 'Login' }],
-          });
+  const handleConfirmDelete = async () => {
+    setIsDeleting(true);
+    try {
+      await deleteAccount();
+      setShowDeleteModal(false);
+      Alert.alert('Account Deleted', 'Your account and personal data have been purged per Singapore PDPA.', [
+        {
+          text: 'OK',
+          onPress: () => {
+            navigation.reset({
+              index: 0,
+              routes: [{ name: 'Login' }],
+            });
+          },
         },
-      },
-    ]);
+      ]);
+    } catch (error) {
+      Alert.alert('Could not delete account', error instanceof Error ? error.message : 'Something went wrong');
+    } finally {
+      setIsDeleting(false);
+    }
   };
   // End Section Settings State & Logic
 
@@ -78,7 +86,7 @@ export default function SettingsScreen({ navigation }: any) {
                 <Text style={styles.settings_innerSub}>Tap to update personal declaration</Text>
               </View>
               <View style={styles.settings_innerVal}>
-                <Text style={styles.settings_innerValText}>{user.fullName || 'Sam Tan'}</Text>
+                <Text style={styles.settings_innerValText}>{user.fullName || 'Not set'}</Text>
                 <ChevronRightIcon size={14} />
               </View>
             </TouchableOpacity>
@@ -167,14 +175,22 @@ export default function SettingsScreen({ navigation }: any) {
               <TouchableOpacity
                 style={styles.settings_innerModalBtnDanger}
                 onPress={handleConfirmDelete}
+                disabled={isDeleting}
                 activeOpacity={0.85}
               >
-                <TrashIcon size={18} color="#ffffff" />
-                <Text style={styles.settings_innerModalBtnDangerText}>Permanently Delete Account</Text>
+                {isDeleting ? (
+                  <ActivityIndicator color="#ffffff" />
+                ) : (
+                  <>
+                    <TrashIcon size={18} color="#ffffff" />
+                    <Text style={styles.settings_innerModalBtnDangerText}>Permanently Delete Account</Text>
+                  </>
+                )}
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.settings_innerModalBtnGhost}
                 onPress={() => setShowDeleteModal(false)}
+                disabled={isDeleting}
                 activeOpacity={0.7}
               >
                 <Text style={styles.settings_innerModalBtnGhostText}>Cancel</Text>

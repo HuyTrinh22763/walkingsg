@@ -1,28 +1,24 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { TopBarHeader } from '../../components/TopBarHeader';
 import { useApp } from '../../context/AppContext';
+import type { MobilityNeeds } from '../../types/profile';
 import { styles } from './ProfileMobilityScreen.styles';
 
-const MOBILITY_MODES = [
+const MOBILITY_MODES: { mode: MobilityNeeds; label: string; desc: string }[] = [
   {
-    mode: 'None' as const,
+    mode: 'None',
     label: 'None',
     desc: 'Walking without assistance',
   },
   {
-    mode: 'Wheelchair' as const,
+    mode: 'Wheelchair',
     label: 'Wheelchair',
     desc: 'Step-free only; paths at least 0.9 m wide',
   },
   {
-    mode: 'Stroller' as const,
-    label: 'Stroller',
-    desc: 'Prefer ramps and lifts; avoid kerbs',
-  },
-  {
-    mode: 'Mobility aid' as const,
+    mode: 'Mobility Aid',
     label: 'Mobility aid',
     desc: 'Cane, walker or crutches; gentler gradients',
   },
@@ -30,14 +26,22 @@ const MOBILITY_MODES = [
 
 export default function ProfileMobilityScreen({ navigation }: any) {
   // Section Profile Mobility Logic
-  const { user, updateUser } = useApp();
-  const [selectedMode, setSelectedMode] = useState(user.mobilityMode);
+  const { user, saveProfile } = useApp();
+  const [selectedMode, setSelectedMode] = useState<MobilityNeeds>(user.mobilityMode);
+  const [isSaving, setIsSaving] = useState(false);
 
-  const handleSave = () => {
-    updateUser({ mobilityMode: selectedMode });
-    Alert.alert('Mobility Mode Updated', `Mode set to ${selectedMode}`, [
-      { text: 'OK', onPress: () => navigation.goBack() }
-    ]);
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      await saveProfile({ mobilityMode: selectedMode });
+      Alert.alert('Mobility Mode Updated', `Mode set to ${selectedMode}`, [
+        { text: 'OK', onPress: () => navigation.goBack() },
+      ]);
+    } catch (error) {
+      Alert.alert('Could not save', error instanceof Error ? error.message : 'Something went wrong');
+    } finally {
+      setIsSaving(false);
+    }
   };
   // End Section Profile Mobility Logic
 
@@ -62,6 +66,7 @@ export default function ProfileMobilityScreen({ navigation }: any) {
                 key={item.mode}
                 style={[styles.profileMobility_innerOptionCard, isSelected && styles.profileMobility_innerOptionCard_selected]}
                 onPress={() => setSelectedMode(item.mode)}
+                disabled={isSaving}
                 activeOpacity={0.8}
               >
                 <View style={styles.profileMobility_innerOptionTextCol}>
@@ -79,9 +84,14 @@ export default function ProfileMobilityScreen({ navigation }: any) {
         <TouchableOpacity
           style={styles.profileMobility_innerButtonSave}
           onPress={handleSave}
+          disabled={isSaving}
           activeOpacity={0.85}
         >
-          <Text style={styles.profileMobility_innerButtonSaveText}>Save</Text>
+          {isSaving ? (
+            <ActivityIndicator color="#ffffff" />
+          ) : (
+            <Text style={styles.profileMobility_innerButtonSaveText}>Save</Text>
+          )}
         </TouchableOpacity>
         {/* End Section Profile Mobility */}
       </ScrollView>
