@@ -272,30 +272,54 @@ async def test_forgot_and_reset_password_cycle(mock_dependencies):
     mock_user = MagicMock(id=user_id, user_email="test@example.com")
     user_repo.find_by_email.return_value = mock_user
 
-    # Request reset link
+    # Request reset OTP
     await service.forgot_password(
         ForgotPasswordRequest(user_email="test@example.com")
     )
     assert len(mailer.sent_emails) == 1
-    token = mailer.sent_emails[0]["token"]
+    assert mailer.sent_emails[0]["type"] == "otp"
+    otp_code = mailer.sent_emails[0]["code"]
 
-    # Reset password with valid token
+    # Verify OTP at the authentication gate
+    otp_repo = mock_dependencies["otp_repo"]
+    mock_otp = MagicMock(id=PydanticObjectId())
+    otp_repo.find_active_otp.return_value = mock_otp
+    verify_res = await service.verify_otp(
+        OtpVerifyRequest(user_email="test@example.com", otp_code=otp_code)
+    )
+    assert verify_res.is_verified is True
+
+    # Reset password with valid OTP
+    otp_repo.find_valid_otp_for_reset.return_value = mock_otp
     creds_repo.update_password.return_value = MagicMock()
     reset_res = await service.reset_password(
-        ResetPasswordRequest(token=token, new_password="NewSecurePassword@123")
+        ResetPasswordRequest(
+            user_email="test@example.com",
+            otp_code=otp_code,
+            new_password="NewSecurePassword@123",
+        )
     )
     assert reset_res is True
     assert creds_repo.update_password.called
+    assert otp_repo.delete_by_user_id.called
 
 
 @pytest.mark.asyncio
-async def test_reset_password_invalid_token(mock_dependencies):
+async def test_reset_password_invalid_otp(mock_dependencies):
     service = mock_dependencies["service"]
+    user_repo = mock_dependencies["user_repo"]
+    otp_repo = mock_dependencies["otp_repo"]
+
+    mock_user = MagicMock(id=PydanticObjectId(), user_email="test@example.com")
+    user_repo.find_by_email.return_value = mock_user
+    otp_repo.find_valid_otp_for_reset.return_value = None
 
     with pytest.raises(BadRequestError):
         await service.reset_password(
             ResetPasswordRequest(
-                token="invalid.or.expired.token", new_password="NewSecurePassword@123"
+                user_email="test@example.com",
+                otp_code="999999",
+                new_password="NewSecurePassword@123",
             )
         )
 
