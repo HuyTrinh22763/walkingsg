@@ -82,8 +82,8 @@ export default function RegisterScreen({ navigation }: any) {
       setOtpTimer('10:00');
       Alert.alert('Code Resent', `A new 6-digit code has been sent for ${email}. Check your server console.`);
     } catch (error: any) {
-      Alert.alert('Resend Failed', error.message || 'Unable to resend OTP.');
-    }
+        Alert.alert('Resend Failed', error.message || 'Unable to resend OTP.');
+      }
   };
   // End Section Auth Register State
 

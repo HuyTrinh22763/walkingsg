@@ -26,7 +26,7 @@ export default function LoginScreen({ navigation }: any) {
       });
       navigation.replace('MainTabs');
     } catch (error: any) {
-      Alert.alert('Login Failed', error.message || 'Unable to log in. Please try again.');
+        Alert.alert('Login Failed', error.message || 'Unable to log in. Please try again.');
     } finally {
       setIsLoading(false);
     }
