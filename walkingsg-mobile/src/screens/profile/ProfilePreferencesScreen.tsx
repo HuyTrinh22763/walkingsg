@@ -1,18 +1,41 @@
-import React from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Slider from '@react-native-community/slider';
 import { ChevronRightIcon, SettingsGearIcon } from '../../components/SvgIcons';
 import { ThemeColors } from '../../constants/theme';
 import { useApp } from '../../context/AppContext';
+import type { PreferredPace } from '../../types/profile';
 import { styles } from './ProfilePreferencesScreen.styles';
+
+const PACES: PreferredPace[] = ['Slow', 'Relaxed', 'Brisk'];
 
 export default function ProfilePreferencesScreen({ navigation }: any) {
   // Section Profile Preferences State
-  const { user, updateUser } = useApp();
+  const { user, updateUser, saveProfile } = useApp();
+  const [isSaving, setIsSaving] = useState(false);
+  const isWheelchair = user.mobilityMode === 'Wheelchair';
 
-  const handleSave = () => {
-    Alert.alert('Success', 'Your mobility preferences have been saved.');
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      await saveProfile({});
+      Alert.alert('Success', 'Your mobility preferences have been saved.');
+    } catch (error) {
+      Alert.alert('Could not save', error instanceof Error ? error.message : 'Something went wrong');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleAgeChange = (text: string) => {
+    const parsed = parseInt(text, 10);
+    updateUser({ age: Number.isNaN(parsed) ? null : parsed });
+  };
+
+  const handleCyclePace = () => {
+    const nextIdx = (PACES.indexOf(user.preferredPace) + 1) % PACES.length;
+    updateUser({ preferredPace: PACES[nextIdx] });
   };
   // End Section Profile Preferences State
 
@@ -75,9 +98,10 @@ export default function ProfilePreferencesScreen({ navigation }: any) {
               <Text style={styles.profilePreferences_innerLabel}>Age</Text>
               <TextInput
                 style={styles.profilePreferences_innerInput}
-                value={String(user.age)}
-                onChangeText={(text) => updateUser({ age: parseInt(text) || 0 })}
+                value={user.age === null ? '' : String(user.age)}
+                onChangeText={handleAgeChange}
                 keyboardType="numeric"
+                editable={!isSaving}
               />
             </View>
 
@@ -86,6 +110,7 @@ export default function ProfilePreferencesScreen({ navigation }: any) {
               <TouchableOpacity
                 style={styles.profilePreferences_innerPickerBtn}
                 onPress={() => navigation.navigate('ProfileMobility')}
+                disabled={isSaving}
                 activeOpacity={0.8}
               >
                 <Text style={styles.profilePreferences_innerPickerBtnText}>{user.mobilityMode}</Text>
@@ -98,15 +123,18 @@ export default function ProfilePreferencesScreen({ navigation }: any) {
           <View style={styles.profilePreferences_innerSliderBox}>
             <View style={styles.profilePreferences_innerSliderTop}>
               <Text style={styles.profilePreferences_innerLabel}>Max stairs per route</Text>
-              <Text style={styles.profilePreferences_innerSliderVal}>{user.maxStairs} steps</Text>
+              <Text style={styles.profilePreferences_innerSliderVal}>
+                {isWheelchair ? '0 steps (locked)' : `${user.maxStairs} steps`}
+              </Text>
             </View>
             <Slider
               style={styles.profilePreferences_innerRangeInput}
               minimumValue={0}
               maximumValue={50}
-              step={1}
-              value={user.maxStairs}
+              step={5}
+              value={isWheelchair ? 0 : user.maxStairs}
               onValueChange={(val) => updateUser({ maxStairs: val })}
+              disabled={isSaving || isWheelchair}
               minimumTrackTintColor={ThemeColors.canopy}
               maximumTrackTintColor={ThemeColors.lineStrong}
               thumbTintColor={ThemeColors.canopy}
@@ -124,6 +152,7 @@ export default function ProfilePreferencesScreen({ navigation }: any) {
                     key={level}
                     style={[styles.profilePreferences_innerSegmentBtn, isActive && styles.profilePreferences_innerSegmentBtn_active]}
                     onPress={() => updateUser({ heatSensitivity: level })}
+                    disabled={isSaving}
                     activeOpacity={0.8}
                   >
                     <Text style={[styles.profilePreferences_innerSegmentText, isActive && styles.profilePreferences_innerSegmentText_active]}>
@@ -141,10 +170,8 @@ export default function ProfilePreferencesScreen({ navigation }: any) {
               <Text style={styles.profilePreferences_innerLabel}>Preferred pace</Text>
               <TouchableOpacity
                 style={styles.profilePreferences_innerPickerBtn}
-                onPress={() => {
-                  const nextPace = user.preferredPace === 'Relaxed' ? 'Moderate' : user.preferredPace === 'Moderate' ? 'Brisk' : 'Relaxed';
-                  updateUser({ preferredPace: nextPace });
-                }}
+                onPress={handleCyclePace}
+                disabled={isSaving}
                 activeOpacity={0.8}
               >
                 <Text style={{ fontSize: 13, fontWeight: '600', color: ThemeColors.ink }}>{user.preferredPace}</Text>
@@ -162,6 +189,7 @@ export default function ProfilePreferencesScreen({ navigation }: any) {
                   const nextDuration = durations[(curIdx + 1) % durations.length];
                   updateUser({ maxDuration: nextDuration });
                 }}
+                disabled={isSaving}
                 activeOpacity={0.8}
               >
                 <Text style={{ fontSize: 13, fontWeight: '600', color: ThemeColors.ink }}>{user.maxDuration}</Text>
@@ -173,9 +201,14 @@ export default function ProfilePreferencesScreen({ navigation }: any) {
           <TouchableOpacity
             style={styles.profilePreferences_innerButtonSave}
             onPress={handleSave}
+            disabled={isSaving}
             activeOpacity={0.85}
           >
-            <Text style={styles.profilePreferences_innerButtonSaveText}>Save Preferences</Text>
+            {isSaving ? (
+              <ActivityIndicator color="#ffffff" />
+            ) : (
+              <Text style={styles.profilePreferences_innerButtonSaveText}>Save Preferences</Text>
+            )}
           </TouchableOpacity>
         </View>
         {/* End Section Profile Preferences */}

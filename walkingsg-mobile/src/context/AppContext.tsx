@@ -2,27 +2,35 @@ import React, { createContext, useContext, useState, ReactNode, ReactElement } f
 import type { RouteModel, FeedPostModel } from '../constants/mockData';
 import { INITIAL_ROUTES, INITIAL_FEED_POSTS } from '../constants/mockData';
 import { authService } from '../services/authService';
+import { profileService } from '../services/profileService';
 import type {
   SignUpRequest,
   SignUpResponse,
   OtpVerifyRequest,
   OtpVerifyResponse,
   ResendOtpRequest,
-  LoginRequest, 
+  LoginRequest,
   LoginResponse,
   ForgotPasswordRequest,
   ResetPasswordRequest,
 } from '../types/auth';
+import type {
+  HeatUvSensitivity,
+  MobilityNeeds,
+  PreferredPace,
+  ProfileResponse,
+  ProfileUpdateRequest,
+} from '../types/profile';
 
 // Section App Context
 export interface UserPreferences {
   fullName: string;
   email: string;
-  age: number;
-  mobilityMode: 'None' | 'Wheelchair' | 'Stroller' | 'Mobility aid';
+  age: number | null;
+  mobilityMode: MobilityNeeds;
   maxStairs: number;
-  heatSensitivity: 'Low' | 'Medium' | 'High';
-  preferredPace: 'Relaxed' | 'Moderate' | 'Brisk';
+  heatSensitivity: HeatUvSensitivity;
+  preferredPace: PreferredPace;
   maxDuration: '15 min' | '30 min' | '45 min' | '60 min';
   isDeclared: boolean;
 }
@@ -38,6 +46,8 @@ interface AppContextType {
   user: UserPreferences;
   auth: AuthSession;
   updateUser: (updates: Partial<UserPreferences>) => void;
+  saveProfile: (updates: Partial<UserPreferences>) => Promise<void>;
+  refreshProfile: () => Promise<void>;
   signup: (payload: SignUpRequest) => Promise<SignUpResponse>;
   verifyOtp: (payload: OtpVerifyRequest) => Promise<OtpVerifyResponse>;
   resendOtp: (payload: ResendOtpRequest) => Promise<boolean>;
@@ -45,7 +55,7 @@ interface AppContextType {
   forgotPassword: (payload: ForgotPasswordRequest) => Promise<boolean>;
   resetPassword: (payload: ResetPasswordRequest) => Promise<boolean>;
   logoutUser: () => Promise<void>;
-  deleteAccount: () => void;
+  deleteAccount: () => Promise<void>;
   routes: RouteModel[];
   selectedSort: 'match' | 'stairs' | 'shade';
   setSelectedSort: (sort: 'match' | 'stairs' | 'shade') => void;
@@ -58,15 +68,15 @@ interface AppContextType {
 }
 
 const DEFAULT_USER: UserPreferences = {
-  fullName: 'Sam Tan',
-  email: 'sam.tan@gmail.com',
-  age: 34,
+  fullName: '',
+  email: '',
+  age: null,
   mobilityMode: 'None',
   maxStairs: 10,
   heatSensitivity: 'Medium',
   preferredPace: 'Relaxed',
   maxDuration: '45 min',
-  isDeclared: true,
+  isDeclared: false,
 };
 
 const DEFAULT_AUTH: AuthSession = {
@@ -75,6 +85,36 @@ const DEFAULT_AUTH: AuthSession = {
   refreshToken: null,
   isAuthenticated: false,
 };
+
+function toUserPreferences(profile: ProfileResponse, prev: UserPreferences): UserPreferences {
+  return {
+    ...prev,
+    fullName: profile.name,
+    age: profile.age,
+    mobilityMode: profile.mobility_needs,
+    maxStairs: profile.max_stairs_per_route,
+    heatSensitivity: profile.heat_uv_sensitivity,
+    preferredPace: profile.preferred_pace,
+  };
+}
+
+function toProfileUpdateRequest(user: UserPreferences): ProfileUpdateRequest {
+  const name = user.fullName.trim();
+  if (name.length < 2 || name.length > 50) {
+    throw new Error('Please enter your full name (2–50 characters) in the Personal Declaration form');
+  }
+  if (user.age === null || user.age <= 0) {
+    throw new Error('Please enter a valid age');
+  }
+  return {
+    name,
+    age: user.age,
+    mobility_needs: user.mobilityMode,
+    heat_uv_sensitivity: user.heatSensitivity,
+    max_stairs_per_route: user.maxStairs,
+    preferred_pace: user.preferredPace,
+  };
+}
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
@@ -88,8 +128,28 @@ export function AppProvider({ children }: { children?: ReactNode }): ReactElemen
   const [feedPosts, setFeedPosts] = useState<FeedPostModel[]>(INITIAL_FEED_POSTS);
   const [isMapOutOfBounds, setIsMapOutOfBounds] = useState<boolean>(false);
 
+  const requireSession = (): { accessToken: string; userId: string } => {
+    if (!auth.accessToken || !auth.userId) {
+      throw new Error('You are not logged in');
+    }
+    return { accessToken: auth.accessToken, userId: auth.userId };
+  };
+
   const updateUser = (updates: Partial<UserPreferences>) => {
     setUser((prev: UserPreferences) => ({ ...prev, ...updates }));
+  };
+
+  const saveProfile = async (updates: Partial<UserPreferences>): Promise<void> => {
+    const { accessToken, userId } = requireSession();
+    const request = toProfileUpdateRequest({ ...user, ...updates });
+    const profile = await profileService.updateProfile(accessToken, userId, request);
+    setUser((prev: UserPreferences) => toUserPreferences(profile, { ...prev, ...updates }));
+  };
+
+  const refreshProfile = async (): Promise<void> => {
+    const { accessToken, userId } = requireSession();
+    const profile = await profileService.getProfile(accessToken, userId);
+    setUser((prev: UserPreferences) => toUserPreferences(profile, prev));
   };
 
   const signup = async (payload: SignUpRequest): Promise<SignUpResponse> => {
@@ -106,13 +166,16 @@ export function AppProvider({ children }: { children?: ReactNode }): ReactElemen
 
   const login = async (payload: LoginRequest): Promise<LoginResponse> => {
     const res = await authService.login(payload);
+    const profile = await profileService.getProfile(res.access_token, res.user_id);
     setAuth({
       userId: res.user_id,
       accessToken: res.access_token,
       refreshToken: res.refresh_token,
       isAuthenticated: true,
     });
-    setUser((prev: UserPreferences) => ({ ...prev, email: res.user_email }));
+    setUser((prev: UserPreferences) =>
+      toUserPreferences(profile, { ...prev, email: res.user_email })
+    );
     return res;
   };
 
@@ -136,19 +199,11 @@ export function AppProvider({ children }: { children?: ReactNode }): ReactElemen
     setUser(DEFAULT_USER);
   };
 
-  const deleteAccount = () => {
+  const deleteAccount = async (): Promise<void> => {
+    const { accessToken, userId } = requireSession();
+    await profileService.deleteAccount(accessToken, userId, { confirmation: true });
     setAuth(DEFAULT_AUTH);
-    setUser({
-      fullName: '',
-      email: '',
-      age: 18,
-      mobilityMode: 'None',
-      maxStairs: 0,
-      heatSensitivity: 'Medium',
-      preferredPace: 'Relaxed',
-      maxDuration: '30 min',
-      isDeclared: false,
-    });
+    setUser(DEFAULT_USER);
     setFeedPosts(INITIAL_FEED_POSTS);
   };
 
@@ -171,6 +226,8 @@ export function AppProvider({ children }: { children?: ReactNode }): ReactElemen
         user,
         auth,
         updateUser,
+        saveProfile,
+        refreshProfile,
         signup,
         verifyOtp,
         resendOtp,
