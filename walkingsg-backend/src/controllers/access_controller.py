@@ -34,7 +34,7 @@ def get_access_service(
     key_token_repo: Annotated[KeyTokenRepository, Depends(KeyTokenRepository)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> AccessService:
-    mailer = MailerAdapter()
+    mailer = MailerAdapter(settings=settings)
     key_token_service = KeyTokenService(key_token_repo, settings)
     return AccessService(
         user_repo=user_repo,

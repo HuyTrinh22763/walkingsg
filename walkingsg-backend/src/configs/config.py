@@ -16,6 +16,11 @@ class Settings(BaseSettings):
     jwt_secret: SecretStr
     api_key: SecretStr = SecretStr("walkingsg-secret-api-key")
     onemap_api_key: SecretStr = SecretStr("mock_key")
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    smtp_user: str | None = None
+    smtp_pass: SecretStr | None = None
+    smtp_from: str | None = None
 
 def get_settings() -> Settings:
     return Settings()
