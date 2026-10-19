@@ -39,6 +39,21 @@ class OtpRepository:
             }
         )
 
+    async def find_valid_otp_for_reset(
+        self,
+        *,
+        user_id: PydanticObjectId,
+        otp_code: str,
+    ) -> OtpModel | None:
+        now = utc_now()
+        return await OtpModel.find_one(
+            {
+                "user_id": user_id,
+                "otp_code": otp_code,
+                "expires_at": {"$gt": now},
+            }
+        )
+
     async def mark_used(self, *, otp_id: PydanticObjectId) -> OtpModel | None:
         otp = await OtpModel.get(otp_id)
         if otp is None:

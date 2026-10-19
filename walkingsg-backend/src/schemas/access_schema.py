@@ -78,7 +78,8 @@ class ForgotPasswordRequest(BaseRequest):
 
 
 class ResetPasswordRequest(BaseRequest):
-    token: str
+    user_email: EmailStr
+    otp_code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
     new_password: str
 
     @field_validator("new_password")

@@ -1,9 +1,8 @@
 from datetime import timedelta
 
-import jwt
 from beanie import PydanticObjectId
 
-from src.auth.auth_utils import JWT_ALGORITHM, AuthContext
+from src.auth.auth_utils import AuthContext
 from src.configs.config import Settings
 from src.core.error_response import (
     AuthFailureError,
@@ -48,36 +47,6 @@ class AccessService:
         self._mailer_adapter = mailer_adapter
         self._settings = settings
 
-    def _create_reset_token(self, *, user_id: PydanticObjectId, email: str) -> str:
-        now = utc_now()
-        exp = now + timedelta(minutes=15)
-        payload = {
-            "type": "reset_password",
-            "user_id": str(user_id),
-            "email": email,
-            "iat": int(now.timestamp()),
-            "exp": int(exp.timestamp()),
-        }
-        return jwt.encode(
-            payload,
-            self._settings.jwt_secret.get_secret_value(),
-            algorithm=JWT_ALGORITHM,
-        )
-
-    def _verify_reset_token(self, token: str) -> PydanticObjectId:
-        try:
-            payload = jwt.decode(
-                token,
-                self._settings.jwt_secret.get_secret_value(),
-                algorithms=[JWT_ALGORITHM],
-            )
-            if payload.get("type") != "reset_password":
-                raise BadRequestError("Invalid password reset token")
-            return PydanticObjectId(payload["user_id"])
-        except jwt.ExpiredSignatureError as err:
-            raise BadRequestError("Password reset token has expired") from err
-        except (jwt.InvalidTokenError, Exception) as err:
-            raise BadRequestError("Invalid password reset token") from err
 
     async def sign_up(self, payload: SignUpRequest) -> SignUpOut:
         existing_user = await self._user_repo.find_by_email(email=payload.user_email)
@@ -195,27 +164,41 @@ class AccessService:
         if user is None:
             raise NotFoundError("User not found")
 
-        reset_token = self._create_reset_token(
-            user_id=user.id, email=payload.user_email
+        await self._otp_repo.delete_by_user_id(user_id=user.id)
+        otp_code = generate_numeric_otp(6)
+        expires_at = utc_now() + timedelta(minutes=10)
+        await self._otp_repo.create(
+            user_id=user.id,
+            otp_code=otp_code,
+            expires_at=expires_at,
         )
-        await self._mailer_adapter.send_reset_link(
-            email=payload.user_email, token=reset_token
-        )
+        await self._mailer_adapter.send_otp(email=payload.user_email, code=otp_code)
         return True
 
     async def reset_password(self, payload: ResetPasswordRequest) -> bool:
-        user_id = self._verify_reset_token(payload.token)
+        user = await self._user_repo.find_by_email(email=payload.user_email)
+        if user is None:
+            raise NotFoundError("User not found")
+
+        otp = await self._otp_repo.find_valid_otp_for_reset(
+            user_id=user.id, otp_code=payload.otp_code
+        )
+        if otp is None:
+            raise BadRequestError("Invalid or expired OTP code")
+
         new_hash = await hash_password(payload.new_password)
         creds = await self._credentials_repo.update_password(
-            user_id=user_id, password_hash=new_hash
+            user_id=user.id, password_hash=new_hash
         )
         if creds is None:
             raise NotFoundError("Credentials not found")
 
         await self._user_repo.set_lockout(
-            user_id=user_id, is_locked=False, lock_expires_at=None
+            user_id=user.id, is_locked=False, lock_expires_at=None
         )
-        await self._key_token_service.delete_by_user_id(user_id=user_id)
+        await self._user_repo.set_verified(user_id=user.id, is_verified=True)
+        await self._otp_repo.delete_by_user_id(user_id=user.id)
+        await self._key_token_service.delete_by_user_id(user_id=user.id)
         return True
 
     async def logout(self, auth_context: AuthContext) -> bool:

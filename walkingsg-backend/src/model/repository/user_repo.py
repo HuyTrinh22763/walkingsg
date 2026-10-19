@@ -12,8 +12,10 @@ class UserRepository:
     async def find_by_email(self, *, email: str) -> UserModel | None:
         return await UserModel.find_one({"user_email": email})
 
-    async def create(self, *, user_email: str) -> UserModel:
-        user = UserModel(user_email=user_email)
+    async def create(
+        self, *, user_email: str, is_verified: bool = False
+    ) -> UserModel:
+        user = UserModel(user_email=user_email, is_verified=is_verified)
         await user.insert()
         return user
 
