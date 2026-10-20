@@ -1,13 +1,33 @@
-import React from 'react';
-import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
+import React, { useEffect } from 'react';
+import { ActivityIndicator, Alert, View, Text, TouchableOpacity, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LeafIcon } from '../../components/SvgIcons';
+import { ThemeColors } from '../../constants/theme';
 import { useApp } from '../../context/AppContext';
 import { styles } from './RouteExpandedScreen.styles';
 
 export default function RouteExpandedScreen({ navigation }: any) {
   // Section Route Expanded Logic
-  const { selectedRoute } = useApp();
+  const {
+    routes,
+    selectedRoute,
+    selectedRouteDetail,
+    fetchRouteDetail,
+    isRouteDetailLoading,
+  } = useApp();
+
+  useEffect(() => {
+    fetchRouteDetail(selectedRoute.id).catch((error) => {
+      const message = error instanceof Error ? error.message : 'Please try again.';
+      Alert.alert('Route details unavailable', message);
+    });
+  }, [selectedRoute.id]);
+
+  const detailBullets =
+    selectedRouteDetail && selectedRouteDetail.steps.length > 0
+      ? selectedRouteDetail.steps
+      : selectedRoute.details;
+  const nextRoute = routes.find((route) => route.id !== selectedRoute.id);
 
   const handleStartRoute = () => {
     navigation.navigate('NavActive');
@@ -53,22 +73,26 @@ export default function RouteExpandedScreen({ navigation }: any) {
             <View style={styles.routeExpanded_innerBadgeGreen}>
               <Text style={styles.routeExpanded_innerBadgeTextGreen}>♿ {selectedRoute.stairs} stairs</Text>
             </View>
-            <View style={styles.routeExpanded_innerBadgeNeutral}>
-              <Text style={styles.routeExpanded_innerBadgeTextNeutral}>👥 {selectedRoute.crowd}</Text>
-            </View>
+            {selectedRoute.crowd ? (
+              <View style={styles.routeExpanded_innerBadgeNeutral}>
+                <Text style={styles.routeExpanded_innerBadgeTextNeutral}>👥 {selectedRoute.crowd}</Text>
+              </View>
+            ) : null}
           </View>
 
           {/* Accessibility bullet points */}
-          <View style={styles.routeExpanded_innerFeaturesList}>
-            {selectedRoute.details.map((detail, idx) => (
-              <View key={idx} style={styles.routeExpanded_innerFeatureItem}>
-                <Text style={styles.routeExpanded_innerFeatureBullet}>
-                  {idx === 0 ? '☂' : idx === 1 ? '♿' : idx === 2 ? '👥' : '•'}
-                </Text>
-                <Text style={styles.routeExpanded_innerFeatureText}>{detail}</Text>
-              </View>
-            ))}
-          </View>
+          {isRouteDetailLoading ? (
+            <ActivityIndicator size="small" color={ThemeColors.canopy} />
+          ) : (
+            <View style={styles.routeExpanded_innerFeaturesList}>
+              {detailBullets.map((detail, idx) => (
+                <View key={idx} style={styles.routeExpanded_innerFeatureItem}>
+                  <Text style={styles.routeExpanded_innerFeatureBullet}>•</Text>
+                  <Text style={styles.routeExpanded_innerFeatureText}>{detail}</Text>
+                </View>
+              ))}
+            </View>
+          )}
 
           <TouchableOpacity
             style={styles.routeExpanded_innerButtonStart}
@@ -80,13 +104,17 @@ export default function RouteExpandedScreen({ navigation }: any) {
         </View>
 
         {/* Collapsed Secondary Card Preview */}
-        <View style={styles.routeExpanded_innerCollapsedCard}>
-          <View style={styles.routeExpanded_innerCardTop}>
-            <Text style={styles.routeExpanded_innerCollapsedTitle}>Route B — Orchard Rd</Text>
-            <Text style={{ fontSize: 13, fontWeight: '700', color: '#57503f' }}>78% match</Text>
+        {nextRoute ? (
+          <View style={styles.routeExpanded_innerCollapsedCard}>
+            <View style={styles.routeExpanded_innerCardTop}>
+              <Text style={styles.routeExpanded_innerCollapsedTitle}>{nextRoute.name}</Text>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: '#57503f' }}>{nextRoute.matchPct}% match</Text>
+            </View>
+            <Text style={styles.routeExpanded_innerMetrics}>
+              {nextRoute.time} · {nextRoute.distance}
+            </Text>
           </View>
-          <Text style={styles.routeExpanded_innerMetrics}>19 min · 1.5 km</Text>
-        </View>
+        ) : null}
         {/* End Section Route Expanded */}
       </ScrollView>
     </SafeAreaView>

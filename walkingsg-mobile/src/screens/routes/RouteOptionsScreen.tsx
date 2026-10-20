@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LeafIcon } from '../../components/SvgIcons';
+import type { RouteModel } from '../../constants/mockData';
 import { useApp } from '../../context/AppContext';
 import { styles } from './RouteOptionsScreen.styles';
 
@@ -21,7 +22,7 @@ export default function RouteOptionsScreen({ navigation }: any) {
     return b.matchPct - a.matchPct;
   });
 
-  const handleSelectRoute = (route: any) => {
+  const handleSelectRoute = (route: RouteModel) => {
     setSelectedRoute(route);
     navigation.navigate('RouteExpanded');
   };
@@ -34,7 +35,7 @@ export default function RouteOptionsScreen({ navigation }: any) {
         <View style={styles.routeOptions_innerHead}>
           <View>
             <Text style={styles.routeOptions_innerTitle}>Route Options</Text>
-            <Text style={styles.routeOptions_innerSub}>5 routes found</Text>
+            <Text style={styles.routeOptions_innerSub}>{routes.length} routes found</Text>
           </View>
           <TouchableOpacity
             style={styles.routeOptions_innerSortBtn}
@@ -81,9 +82,11 @@ export default function RouteOptionsScreen({ navigation }: any) {
                   <View style={[styles.routeOptions_innerBadge, stairsBadgeStyle]}>
                     <Text style={stairsTextStyle}>♿ {route.stairs} stairs</Text>
                   </View>
-                  <View style={[styles.routeOptions_innerBadge, styles.routeOptions_innerBadge_neutral]}>
-                    <Text style={styles.routeOptions_innerBadgeText_neutral}>👥 {route.crowd}</Text>
-                  </View>
+                  {route.crowd ? (
+                    <View style={[styles.routeOptions_innerBadge, styles.routeOptions_innerBadge_neutral]}>
+                      <Text style={styles.routeOptions_innerBadgeText_neutral}>👥 {route.crowd}</Text>
+                    </View>
+                  ) : null}
                 </View>
               </TouchableOpacity>
             );

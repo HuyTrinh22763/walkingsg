@@ -3,6 +3,9 @@ import type { RouteModel, FeedPostModel } from '../constants/mockData';
 import { INITIAL_ROUTES, INITIAL_FEED_POSTS } from '../constants/mockData';
 import { authService } from '../services/authService';
 import { profileService } from '../services/profileService';
+import { routeService } from '../services/routeService';
+import { toRouteCards } from '../types/route';
+import type { RouteCoord, RouteDetailOut, RouteSearchOut } from '../types/route';
 import type {
   SignUpRequest,
   SignUpResponse,
@@ -61,6 +64,11 @@ interface AppContextType {
   setSelectedSort: (sort: 'match' | 'stairs' | 'shade') => void;
   selectedRoute: RouteModel;
   setSelectedRoute: (route: RouteModel) => void;
+  generateRoutes: (origin: RouteCoord, destination: RouteCoord) => Promise<RouteSearchOut>;
+  isRouteLoading: boolean;
+  selectedRouteDetail: RouteDetailOut | null;
+  fetchRouteDetail: (routeId: string) => Promise<RouteDetailOut>;
+  isRouteDetailLoading: boolean;
   feedPosts: FeedPostModel[];
   addFeedPost: (post: Omit<FeedPostModel, 'id' | 'timeAgo'>) => void;
   isMapOutOfBounds: boolean;
@@ -122,17 +130,30 @@ export function AppProvider({ children }: { children?: ReactNode }): ReactElemen
   const [user, setUser] = useState<UserPreferences>(DEFAULT_USER);
   const [auth, setAuth] = useState<AuthSession>(DEFAULT_AUTH);
 
-  const [routes] = useState<RouteModel[]>(INITIAL_ROUTES);
+  const [routes, setRoutes] = useState<RouteModel[]>(INITIAL_ROUTES);
   const [selectedSort, setSelectedSort] = useState<'match' | 'stairs' | 'shade'>('match');
-  const [selectedRoute, setSelectedRoute] = useState<RouteModel>(INITIAL_ROUTES[0]);
+  const [selectedRoute, setSelectedRouteState] = useState<RouteModel>(INITIAL_ROUTES[0]);
+  const [selectedRouteDetail, setSelectedRouteDetail] = useState<RouteDetailOut | null>(null);
+  const [isRouteLoading, setIsRouteLoading] = useState<boolean>(false);
+  const [isRouteDetailLoading, setIsRouteDetailLoading] = useState<boolean>(false);
   const [feedPosts, setFeedPosts] = useState<FeedPostModel[]>(INITIAL_FEED_POSTS);
   const [isMapOutOfBounds, setIsMapOutOfBounds] = useState<boolean>(false);
 
-  const requireSession = (): { accessToken: string; userId: string } => {
+  const requireSession = (): {
+    accessToken: string;
+    userId: string;
+    token: string;
+    clientId: string;
+  } => {
     if (!auth.accessToken || !auth.userId) {
       throw new Error('You are not logged in');
     }
-    return { accessToken: auth.accessToken, userId: auth.userId };
+    return {
+      accessToken: auth.accessToken,
+      userId: auth.userId,
+      token: auth.accessToken,
+      clientId: auth.userId,
+    };
   };
 
   const updateUser = (updates: Partial<UserPreferences>) => {
@@ -220,6 +241,46 @@ export function AppProvider({ children }: { children?: ReactNode }): ReactElemen
     setIsMapOutOfBounds((prev: boolean) => !prev);
   };
 
+
+  const setSelectedRoute = (route: RouteModel) => {
+    setSelectedRouteState(route);
+    setSelectedRouteDetail(null);
+  };
+
+  const generateRoutes = async (
+    origin: RouteCoord,
+    destination: RouteCoord
+  ): Promise<RouteSearchOut> => {
+    const { token, clientId } = requireSession();
+    setIsRouteLoading(true);
+    try {
+      const result = await routeService.generateRoutes(
+        { origin_coord: origin, destination_coord: destination },
+        token,
+        clientId
+      );
+      const cards = toRouteCards(result);
+      setRoutes(cards);
+      setSelectedRouteState(cards[0]);
+      setSelectedRouteDetail(null);
+      return result;
+    } finally {
+      setIsRouteLoading(false);
+    }
+  };
+
+  const fetchRouteDetail = async (routeId: string): Promise<RouteDetailOut> => {
+    const { token, clientId } = requireSession();
+    setIsRouteDetailLoading(true);
+    try {
+      const detail = await routeService.findRoute(routeId, token, clientId);
+      setSelectedRouteDetail(detail);
+      return detail;
+    } finally {
+      setIsRouteDetailLoading(false);
+    }
+  };
+
   return (
     <AppContext.Provider
       value={{
@@ -241,6 +302,11 @@ export function AppProvider({ children }: { children?: ReactNode }): ReactElemen
         setSelectedSort,
         selectedRoute,
         setSelectedRoute,
+        generateRoutes,
+        isRouteLoading,
+        selectedRouteDetail,
+        fetchRouteDetail,
+        isRouteDetailLoading,
         feedPosts,
         addFeedPost,
         isMapOutOfBounds,
