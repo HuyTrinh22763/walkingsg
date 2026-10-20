@@ -1,0 +1,4 @@
+### Route Find Endpoint
+GET http://localhost:3052/v1/api/route/<route_id from generate>
+x-client-id: <user_id from login>
+authorization: <access_token from login>

@@ -1,0 +1,10 @@
+### Route Generate Endpoint
+POST http://localhost:3052/v1/api/route/generate
+Content-Type: application/json
+x-client-id: <user_id from login>
+authorization: <access_token from login>
+
+{
+  "origin_coord": [1.3521, 103.8198],
+  "destination_coord": [1.2840, 103.8575]
+}
