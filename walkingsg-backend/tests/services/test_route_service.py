@@ -67,20 +67,17 @@ def route_service_deps():
     map_segment_repo = AsyncMock(spec=MapSegmentRepository)
     route_repo = AsyncMock(spec=RouteRepository)
     profile_repo = AsyncMock(spec=ProfileRepository)
-    pedestrian_adapter = AsyncMock(spec=PedestrianRoutingAdapter)
 
     service = RouteService(
         map_segment_repo=map_segment_repo,
         route_repo=route_repo,
         profile_repo=profile_repo,
-        pedestrian_adapter=pedestrian_adapter,
     )
     return {
         "service": service,
         "map_segment_repo": map_segment_repo,
         "route_repo": route_repo,
         "profile_repo": profile_repo,
-        "pedestrian_adapter": pedestrian_adapter,
     }
 
 
@@ -106,7 +103,6 @@ async def test_generate_routes_orchestrates_full_pipeline_and_persists(route_ser
     profile = make_profile(MobilityNeeds.NONE)
 
     route_service_deps["profile_repo"].find_by_user_id.return_value = profile
-    route_service_deps["pedestrian_adapter"].get_pedestrian_route.return_value = MOCK_BASE_ROUTES
     route_service_deps["map_segment_repo"].find_segments_in_bbox.return_value = MOCK_SEGMENTS
 
     payload = RouteSearchRequest(
@@ -117,12 +113,6 @@ async def test_generate_routes_orchestrates_full_pipeline_and_persists(route_ser
     )
 
     result = await service.generate_routes(user_id=user_id, payload=payload)
-
-    # 1. Adapter called with coordinates
-    route_service_deps["pedestrian_adapter"].get_pedestrian_route.assert_awaited_once_with(
-        origin_coord=(1.3540, 103.6865),
-        destination_coord=(1.3500, 103.6855),
-    )
 
     # 2. Segments queried in bounding box
     route_service_deps["map_segment_repo"].find_segments_in_bbox.assert_awaited_once()
