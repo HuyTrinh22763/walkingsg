@@ -1,0 +1,2 @@
+### Location Autocomplete Search Endpoint
+GET http://localhost:3052/v1/api/location/search?query=novena

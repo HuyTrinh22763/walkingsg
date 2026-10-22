@@ -1,0 +1,9 @@
+### Location Coordinate Validation Endpoint
+POST http://localhost:3052/v1/api/location/validate
+Content-Type: application/json
+
+{
+  "latitude": 1.3521,
+  "longitude": 103.8198,
+  "point_type": "origin"
+}
