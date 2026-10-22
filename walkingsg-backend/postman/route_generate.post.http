@@ -1,10 +1,58 @@
-### Route Generate Endpoint
+### Route Generate - Test Case A: Hall 11 -> Hall 2 (Students Walk)
 POST http://localhost:3052/v1/api/route/generate
 Content-Type: application/json
-x-client-id: <user_id from login>
-authorization: <access_token from login>
+x-client-id: {{client_id}}
+authorization: {{access_token}}
 
 {
-  "origin_coord": [1.3521, 103.8198],
-  "destination_coord": [1.2840, 103.8575]
+  "origin_coord": [1.3548, 103.6868],
+  "destination_coord": [1.3475, 103.6848],
+  "origin_name": "NTU Hall 11",
+  "destination_name": "NTU Hall 2"
 }
+
+###
+
+### Route Generate - Test Case B: Hall 11 -> North Spine (Hill Stair Bypass)
+POST http://localhost:3052/v1/api/route/generate
+Content-Type: application/json
+x-client-id: {{client_id}}
+authorization: {{access_token}}
+
+{
+  "origin_coord": [1.3548, 103.6868],
+  "destination_coord": [1.3483, 103.6812],
+  "origin_name": "NTU Hall 11",
+  "destination_name": "North Spine Plaza"
+}
+
+###
+
+### Route Generate - Test Case C: Hall 11 -> North Hill (Covered Linkway)
+POST http://localhost:3052/v1/api/route/generate
+Content-Type: application/json
+x-client-id: {{client_id}}
+authorization: {{access_token}}
+
+{
+  "origin_coord": [1.3548, 103.6868],
+  "destination_coord": [1.3542, 103.6879],
+  "origin_name": "NTU Hall 11",
+  "destination_name": "North Hill Residence"
+}
+
+###
+
+### Route Generate - Test Case D: NTU North Spine -> Boon Lay MRT (Regional Transit Corridor)
+POST http://localhost:3052/v1/api/route/generate
+Content-Type: application/json
+x-client-id: {{client_id}}
+authorization: {{access_token}}
+
+{
+  "origin_coord": [1.3483, 103.6812],
+  "destination_coord": [1.3386, 103.7060],
+  "origin_name": "NTU North Spine",
+  "destination_name": "Boon Lay MRT"
+}
+
