@@ -24,6 +24,12 @@ import type {
   ProfileResponse,
   ProfileUpdateRequest,
 } from '../types/profile';
+import type {
+  CoordinateValidationResponse,
+  LocationResponse,
+  PointType,
+} from '../types/location';
+import { useLocationState } from './useLocation';
 
 // Section App Context
 export interface UserPreferences {
@@ -73,6 +79,14 @@ interface AppContextType {
   addFeedPost: (post: Omit<FeedPostModel, 'id' | 'timeAgo'>) => void;
   isMapOutOfBounds: boolean;
   toggleOutOfBounds: () => void;
+  origin: LocationResponse | null;
+  destination: LocationResponse | null;
+  searchLocations: (query: string) => Promise<LocationResponse[]>;
+  selectLocation: (
+    pointType: PointType,
+    location: LocationResponse
+  ) => Promise<CoordinateValidationResponse>;
+  clearLocation: (pointType: PointType) => void;
 }
 
 const DEFAULT_USER: UserPreferences = {
@@ -138,6 +152,7 @@ export function AppProvider({ children }: { children?: ReactNode }): ReactElemen
   const [isRouteDetailLoading, setIsRouteDetailLoading] = useState<boolean>(false);
   const [feedPosts, setFeedPosts] = useState<FeedPostModel[]>(INITIAL_FEED_POSTS);
   const [isMapOutOfBounds, setIsMapOutOfBounds] = useState<boolean>(false);
+  const locationState = useLocationState();
 
   const requireSession = (): {
     accessToken: string;
@@ -262,7 +277,12 @@ export function AppProvider({ children }: { children?: ReactNode }): ReactElemen
       const cards = toRouteCards(result);
       setRoutes(cards);
       setSelectedRouteState(cards[0]);
-      setSelectedRouteDetail(null);
+      try {
+        const detail = await routeService.findRoute(result.starred_route.route_id, token, clientId);
+        setSelectedRouteDetail(detail);
+      } catch {
+        setSelectedRouteDetail(null);
+      }
       return result;
     } finally {
       setIsRouteLoading(false);
@@ -311,6 +331,7 @@ export function AppProvider({ children }: { children?: ReactNode }): ReactElemen
         addFeedPost,
         isMapOutOfBounds,
         toggleOutOfBounds,
+        ...locationState,
       }}
     >
       {children}
