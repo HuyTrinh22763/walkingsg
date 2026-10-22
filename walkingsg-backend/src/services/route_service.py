@@ -18,10 +18,6 @@ from src.schemas.route_schema import (
     RouteSearchRequest,
     RouteVariantSummary,
 )
-from src.services.adapters.pedestrian_routing_adapter import (
-    PedestrianRouteData,
-    PedestrianRoutingAdapter,
-)
 from src.services.route_types import RouteFactory
 from src.utils.index import (
     clamp,
@@ -56,12 +52,10 @@ class RouteService:
         map_segment_repo: MapSegmentRepository,
         route_repo: RouteRepository,
         profile_repo: ProfileRepository,
-        pedestrian_adapter: PedestrianRoutingAdapter,
     ) -> None:
         self._map_segment_repo = map_segment_repo
         self._route_repo = route_repo
         self._profile_repo = profile_repo
-        self._pedestrian_adapter = pedestrian_adapter
 
     def calculate_match_score(
         self,
@@ -130,42 +124,6 @@ class RouteService:
             route.is_starred = index == 0
         return ranked
 
-    def _build_route_variants(
-        self,
-        user_id: PydanticObjectId,
-        payload: RouteSearchRequest,
-        profile: ProfileModel,
-        base_routes: list[PedestrianRouteData],
-        candidates: list[MapSegmentModel],
-    ) -> list[RouteModel]:
-        routes: list[RouteModel] = []
-        segments_by_id = {s.segment_id: s for s in candidates}
-
-        for route_type in RouteType:
-            strategy = RouteFactory.get(route_type)()
-            route = strategy.generate_route(
-                user_id=user_id,
-                origin_name=payload.origin_name,
-                origin_coord=payload.origin_coord,
-                destination_name=payload.destination_name,
-                destination_coord=payload.destination_coord,
-                base_routes=base_routes,
-                candidate_segments=candidates,
-            )
-            route_segments = [
-                segments_by_id[sid]
-                for sid in route.segment_ids
-                if sid in segments_by_id
-            ]
-            route.match_score = self.calculate_match_score(
-                route,
-                profile,
-                segments=route_segments,
-            )
-            routes.append(route)
-
-        return routes
-
     async def generate_routes(
         self, user_id: PydanticObjectId, payload: RouteSearchRequest
     ) -> RouteSearchOut:
@@ -180,11 +138,6 @@ class RouteService:
         if profile is None:
             profile = await self._profile_repo.create(user_id=user_id)
 
-        base_routes = await self._pedestrian_adapter.get_pedestrian_route(
-            origin_coord=payload.origin_coord,
-            destination_coord=payload.destination_coord,
-        )
-
         candidates = await self._map_segment_repo.find_segments_in_bbox(
             min_lat=min(payload.origin_coord[0], payload.destination_coord[0])
             - BBOX_PADDING_DEG,
@@ -195,12 +148,35 @@ class RouteService:
             max_lng=max(payload.origin_coord[1], payload.destination_coord[1])
             + BBOX_PADDING_DEG,
         )
+        segments_by_id = {
+            segment.segment_id: segment for segment in candidates
+        }
 
-        variants = self._build_route_variants(
-            user_id, payload, profile, base_routes, candidates
-        )
-        ranked = self.rank_routes(variants)
+        routes: list[RouteModel] = []
+        for route_type in RouteType:
+            strategy = RouteFactory.get(route_type)()
+            route = await strategy.generate_route(
+                user_id=user_id,
+                origin_name=payload.origin_name,
+                origin_coord=payload.origin_coord,
+                destination_name=payload.destination_name,
+                destination_coord=payload.destination_coord,
+                candidate_segments=candidates,
+                segments=candidates,
+            )
+            route_segments = [
+                segments_by_id[sid]
+                for sid in route.segment_ids
+                if sid in segments_by_id
+            ]
+            route.match_score = self.calculate_match_score(
+                route,
+                profile,
+                segments=route_segments,
+            )
+            routes.append(route)
 
+        ranked = self.rank_routes(routes)
         for route in ranked:
             await self._route_repo.create(route=route)
 
