@@ -17,6 +17,8 @@ def _validate_coord(value: tuple[float, float], field_name: str) -> tuple[float,
 class RouteSearchRequest(BaseRequest):
     origin_coord: tuple[float, float]
     destination_coord: tuple[float, float]
+    origin_name: str = "Origin"
+    destination_name: str = "Destination"
 
     @field_validator("origin_coord")
     @classmethod
