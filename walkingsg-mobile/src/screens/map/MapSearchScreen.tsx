@@ -4,55 +4,56 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import OneMapView, { OneMapViewHandle, MapPin, LatLng } from '../../components/OneMapView';
 import { RoutesTabIcon } from '../../components/SvgIcons';
 import { useApp } from '../../context/AppContext';
-import type { RouteCoord } from '../../types/route';
 import { styles } from './MapSearchScreen.styles';
 
-// Section Map Search Mock Data
-const MOCK_CENTER: LatLng = { lat: 1.2990, lng: 103.8490 };
-const ORIGIN_COORD: RouteCoord = [1.2966, 103.8498];
-const DESTINATION_COORD: RouteCoord = [1.3016, 103.8365];
-
-/** Mock walking route: Bencoolen St → Orchard Central (11 waypoints) */
-const MOCK_ROUTE: LatLng[] = [
-  { lat: 1.2966, lng: 103.8498 }, // Bencoolen St / Prinsep St junction
-  { lat: 1.2972, lng: 103.8485 },
-  { lat: 1.2979, lng: 103.8476 },
-  { lat: 1.2985, lng: 103.8462 },
-  { lat: 1.2988, lng: 103.8450 },
-  { lat: 1.2995, lng: 103.8435 },
-  { lat: 1.3000, lng: 103.8418 },
-  { lat: 1.3005, lng: 103.8405 },
-  { lat: 1.3010, lng: 103.8390 },
-  { lat: 1.3014, lng: 103.8378 },
-  { lat: 1.3016, lng: 103.8365 }, // Orchard Central
-];
-
-const MOCK_PINS: MapPin[] = [
-  {
-    id: 'origin',
-    position: { lat: ORIGIN_COORD[0], lng: ORIGIN_COORD[1] },
-    type: 'origin',
-    label: 'Bencoolen St',
-    detail: 'Your starting point',
-  },
-  {
-    id: 'dest',
-    position: { lat: DESTINATION_COORD[0], lng: DESTINATION_COORD[1] },
-    type: 'destination',
-    label: 'Orchard Central',
-    detail: 'Your destination',
-  },
-];
-// End Section Map Search Mock Data
+const SINGAPORE_CENTER: LatLng = { lat: 1.3521, lng: 103.8198 };
 
 export default function MapSearchScreen({ navigation }: any) {
   // Section Map Search Logic
   const mapRef = useRef<OneMapViewHandle | null>(null);
-  const { generateRoutes, isRouteLoading } = useApp();
+  const { generateRoutes, isRouteLoading, origin, destination, selectedRouteDetail } = useApp();
+
+  const routeCoordinates: LatLng[] =
+    selectedRouteDetail && selectedRouteDetail.polyline.length > 0
+      ? selectedRouteDetail.polyline.map(([lat, lng]) => ({ lat, lng }))
+      : [];
+
+  const pins: MapPin[] = [];
+  if (origin) {
+    pins.push({
+      id: 'origin',
+      position: { lat: origin.latitude, lng: origin.longitude },
+      type: 'origin',
+      label: origin.address_label,
+      detail: 'Starting point',
+    });
+  }
+  if (destination) {
+    pins.push({
+      id: 'dest',
+      position: { lat: destination.latitude, lng: destination.longitude },
+      type: 'destination',
+      label: destination.address_label,
+      detail: 'Destination',
+    });
+  }
+
+  const mapCenter: LatLng = origin
+    ? { lat: origin.latitude, lng: origin.longitude }
+    : destination
+    ? { lat: destination.latitude, lng: destination.longitude }
+    : SINGAPORE_CENTER;
 
   const handleFindRoutes = async () => {
+    if (!origin || !destination) {
+      navigation.navigate('SearchLocation');
+      return;
+    }
     try {
-      await generateRoutes(ORIGIN_COORD, DESTINATION_COORD);
+      await generateRoutes(
+        [origin.latitude, origin.longitude],
+        [destination.latitude, destination.longitude]
+      );
       navigation.navigate('Routes');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Please try again.';
@@ -83,25 +84,32 @@ export default function MapSearchScreen({ navigation }: any) {
       <View style={styles.mapSearch_innerContainer}>
         {/* Real OneMap Leaflet Map */}
         <OneMapView
-          center={MOCK_CENTER}
+          center={mapCenter}
           zoom={15}
-          routeCoordinates={MOCK_ROUTE}
-          pins={MOCK_PINS}
+          routeCoordinates={routeCoordinates}
+          pins={pins}
           mapRef={mapRef}
         />
 
-        {/* Floating Search Card */}
-        <View style={styles.mapSearch_innerFloatingSearch}>
+        <TouchableOpacity
+          style={styles.mapSearch_innerFloatingSearch}
+          onPress={() => navigation.navigate('SearchLocation')}
+          activeOpacity={0.85}
+        >
           <View style={styles.mapSearch_innerSearchRow}>
             <View style={[styles.mapSearch_innerPinDot, styles.mapSearch_innerPinGreen]} />
-            <Text style={styles.mapSearch_innerInputText}>Current location</Text>
+            <Text style={styles.mapSearch_innerInputText} numberOfLines={1}>
+              {origin ? origin.address_label : 'Select starting point'}
+            </Text>
           </View>
           <View style={styles.mapSearch_innerDivider} />
           <View style={styles.mapSearch_innerSearchRow}>
             <View style={[styles.mapSearch_innerPinDot, styles.mapSearch_innerPinBrown]} />
-            <Text style={styles.mapSearch_innerInputText}>Bencoolen St → Orchard Central</Text>
+            <Text style={styles.mapSearch_innerInputText} numberOfLines={1}>
+              {destination ? destination.address_label : 'Select destination'}
+            </Text>
           </View>
-        </View>
+        </TouchableOpacity>
 
         {/* Map Legend */}
         <View style={styles.mapSearch_innerMapLegend}>
@@ -146,7 +154,11 @@ export default function MapSearchScreen({ navigation }: any) {
               <RoutesTabIcon size={20} color="#ffffff" />
             )}
             <Text style={styles.mapSearch_innerButtonRoutesText}>
-              {isRouteLoading ? 'Finding routes...' : 'Find Accessible Routes'}
+              {isRouteLoading
+                ? 'Finding routes...'
+                : origin && destination
+                ? 'Find Accessible Routes'
+                : 'Select Locations to Plan'}
             </Text>
           </TouchableOpacity>
         </View>
