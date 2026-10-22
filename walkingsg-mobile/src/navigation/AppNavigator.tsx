@@ -11,6 +11,7 @@ import FeedReportScreen from '../screens/feed/FeedReportScreen';
 import ProfileDeclarationScreen from '../screens/profile/ProfileDeclarationScreen';
 import ProfileMobilityScreen from '../screens/profile/ProfileMobilityScreen';
 import SettingsScreen from '../screens/settings/SettingsScreen';
+import SearchLocationScreen from '../screens/location/SearchLocationScreen';
 import { TabNavigator } from './TabNavigator';
 
 // Section App Navigator
@@ -42,6 +43,7 @@ export function AppNavigator() {
       <Stack.Screen name="ProfileDeclaration" component={ProfileDeclarationScreen} />
       <Stack.Screen name="ProfileMobility" component={ProfileMobilityScreen} />
       <Stack.Screen name="Settings" component={SettingsScreen} />
+      <Stack.Screen name="SearchLocation" component={SearchLocationScreen} />
     </Stack.Navigator>
   );
 }
