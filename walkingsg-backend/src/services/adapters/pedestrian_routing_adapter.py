@@ -32,9 +32,12 @@ class PedestrianRoutingAdapter:
         *,
         origin_coord: tuple[float, float],
         destination_coord: tuple[float, float],
+        via_coord: tuple[float, float] | None = None,
     ) -> list[PedestrianRouteData]:
         payload = await self._fetch_route_with_fallback(
-            origin_coord=origin_coord, destination_coord=destination_coord
+            origin_coord=origin_coord,
+            destination_coord=destination_coord,
+            via_coord=via_coord,
         )
         return self._parse_routes(payload)
 
@@ -43,13 +46,21 @@ class PedestrianRoutingAdapter:
         *,
         origin_coord: tuple[float, float],
         destination_coord: tuple[float, float],
+        via_coord: tuple[float, float] | None = None,
     ) -> dict[str, Any]:
         endpoints = [OSRM_FOOT_URL, OSRM_FALLBACK_URL]
         # OSRM coordinate order in path: {lng},{lat};{lng},{lat}
-        coord_path = (
-            f"{origin_coord[1]:.6f},{origin_coord[0]:.6f};"
-            f"{destination_coord[1]:.6f},{destination_coord[0]:.6f}"
-        )
+        if via_coord:
+            coord_path = (
+                f"{origin_coord[1]:.6f},{origin_coord[0]:.6f};"
+                f"{via_coord[1]:.6f},{via_coord[0]:.6f};"
+                f"{destination_coord[1]:.6f},{destination_coord[0]:.6f}"
+            )
+        else:
+            coord_path = (
+                f"{origin_coord[1]:.6f},{origin_coord[0]:.6f};"
+                f"{destination_coord[1]:.6f},{destination_coord[0]:.6f}"
+            )
         params = {
             "overview": "full",
             "geometries": "geojson",
