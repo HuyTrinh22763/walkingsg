@@ -157,5 +157,38 @@ export const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#e02424',
   },
+  navActive_innerGpsBanner: {
+    backgroundColor: '#eff6ff',
+    borderWidth: 1,
+    borderColor: '#3b82f6',
+    borderRadius: 10,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    shadowColor: '#221f18',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  navActive_innerGpsBannerText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#1d4ed8',
+  },
+  navActive_innerGpsBannerBtn: {
+    backgroundColor: '#3b82f6',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  navActive_innerGpsBannerBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#ffffff',
+  },
 });
 /* End Section Nav Active */
