@@ -102,7 +102,6 @@ interface AppContextType {
   userGpsLocation: { latitude: number; longitude: number } | null;
   gpsStatus: 'prompt' | 'granted' | 'denied';
   requestGpsPermission: () => Promise<boolean>;
-  useCurrentLocationAsOrigin: () => Promise<boolean>;
   setupInitialGpsLocation: () => Promise<boolean>;
 }
 

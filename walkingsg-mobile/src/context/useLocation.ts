@@ -97,45 +97,6 @@ export function useLocationState() {
     }
   }, [requestGpsPermission]);
 
-  const useCurrentLocationAsOrigin = useCallback(async (): Promise<boolean> => {
-    let granted = gpsStatus === 'granted';
-    if (!granted && gpsStatus === 'prompt') {
-      granted = await requestGpsPermission();
-    }
-    if (!granted) return false;
-
-    try {
-      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      const { latitude, longitude } = loc.coords;
-      setUserGpsLocation({ latitude, longitude });
-
-      const validation = await locationService.validateCoordinates({
-        latitude,
-        longitude,
-        point_type: 'origin',
-      });
-
-      if (!validation.is_valid) {
-        Alert.alert(
-          'Outside Singapore Bounds',
-          'Your current GPS location is outside Singapore coverage area. Please choose a starting point in Singapore.'
-        );
-        return false;
-      }
-
-      setOrigin({
-        address_label: 'Current Location',
-        latitude,
-        longitude,
-      });
-      return true;
-    } catch (err) {
-      console.warn('Failed to obtain current GPS position:', err);
-      Alert.alert('GPS Error', 'Unable to fetch your current GPS position. Please try again.');
-      return false;
-    }
-  }, [gpsStatus, requestGpsPermission]);
-
   const searchLocations = useCallback(
     (query: string): Promise<LocationResponse[]> => locationService.searchAddress(query),
     []
@@ -174,7 +135,6 @@ export function useLocationState() {
     userGpsLocation,
     gpsStatus,
     requestGpsPermission,
-    useCurrentLocationAsOrigin,
     setupInitialGpsLocation,
   };
 }

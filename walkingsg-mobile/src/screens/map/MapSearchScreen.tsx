@@ -19,14 +19,14 @@ export default function MapSearchScreen({ navigation }: any) {
     selectedRouteDetail,
     gpsStatus,
     userGpsLocation,
-    useCurrentLocationAsOrigin,
+    setupInitialGpsLocation,
   } = useApp();
 
   useEffect(() => {
     if (!origin && gpsStatus === 'granted') {
-      useCurrentLocationAsOrigin().catch(() => {});
+      setupInitialGpsLocation().catch(() => {});
     }
-  }, [origin, gpsStatus, useCurrentLocationAsOrigin]);
+  }, [origin, gpsStatus, setupInitialGpsLocation]);
 
   const routeCoordinates: LatLng[] =
     selectedRouteDetail && selectedRouteDetail.polyline.length > 0
