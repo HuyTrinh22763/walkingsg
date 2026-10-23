@@ -25,6 +25,8 @@ interface LocationFieldProps {
   placeholder: string;
   isSelected: boolean;
   isLocked: boolean;
+  initialValue?: string;
+  headerAction?: React.ReactNode;
   onSelect: (location: LocationResponse) => Promise<boolean>;
   onClear: () => void;
 }
@@ -34,16 +36,25 @@ function LocationField({
   placeholder,
   isSelected,
   isLocked,
+  initialValue,
+  headerAction,
   onSelect,
   onClear,
 }: LocationFieldProps) {
   const { searchLocations } = useApp();
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(initialValue ?? '');
   const [suggestions, setSuggestions] = useState<LocationResponse[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [hasNoResults, setHasNoResults] = useState(false);
   const latestRequest = useRef(0);
   const skipNextSearch = useRef(false);
+
+  useEffect(() => {
+    if (initialValue != null && initialValue !== query) {
+      skipNextSearch.current = true;
+      setQuery(initialValue);
+    }
+  }, [initialValue]);
 
   useEffect(() => {
     const requestId = ++latestRequest.current;
@@ -96,7 +107,10 @@ function LocationField({
 
   return (
     <View style={styles.field}>
-      <Text style={styles.label}>{label}</Text>
+      <View style={styles.fieldHeaderRow}>
+        <Text style={styles.label}>{label}</Text>
+        {headerAction}
+      </View>
       <View style={styles.inputRow}>
         <TextInput
           style={[styles.input, isSelected && styles.inputSelected]}
@@ -141,10 +155,28 @@ interface SearchLocationScreenProps {
 }
 
 export default function SearchLocationScreen({ navigation, onContinue }: SearchLocationScreenProps) {
-  const { origin, destination, selectLocation, clearLocation, generateRoutes, isRouteLoading } = useApp();
+  const {
+    origin,
+    destination,
+    selectLocation,
+    clearLocation,
+    generateRoutes,
+    isRouteLoading,
+    useCurrentLocationAsOrigin,
+  } = useApp();
   const [validating, setValidating] = useState<PointType | null>(null);
-  const isLoading = validating !== null || isRouteLoading;
+  const [isLocating, setIsLocating] = useState(false);
+  const isLoading = validating !== null || isRouteLoading || isLocating;
   const canContinue = origin !== null && destination !== null && !isLoading;
+
+  const handleUseCurrentLocation = async () => {
+    setIsLocating(true);
+    try {
+      await useCurrentLocationAsOrigin();
+    } finally {
+      setIsLocating(false);
+    }
+  };
 
   const handleSelect = async (pointType: PointType, location: LocationResponse): Promise<boolean> => {
     setValidating(pointType);
@@ -188,6 +220,19 @@ export default function SearchLocationScreen({ navigation, onContinue }: SearchL
         placeholder="Search a place, address or postal code"
         isSelected={origin !== null}
         isLocked={isLoading}
+        initialValue={origin?.address_label}
+        headerAction={
+          <Pressable
+            onPress={handleUseCurrentLocation}
+            disabled={isLoading}
+            style={({ pressed }) => [styles.currentLocationBtn, (pressed || isLoading) && { opacity: 0.6 }]}
+          >
+            {isLocating ? (
+              <ActivityIndicator size="small" color="#2563eb" style={{ marginRight: 4 }} />
+            ) : null}
+            <Text style={styles.currentLocationBtnText}>📍 Use Current Location</Text>
+          </Pressable>
+        }
         onSelect={(location) => handleSelect('origin', location)}
         onClear={() => clearLocation('origin')}
       />
@@ -197,6 +242,7 @@ export default function SearchLocationScreen({ navigation, onContinue }: SearchL
         placeholder="Search a place, address or postal code"
         isSelected={destination !== null}
         isLocked={isLoading}
+        initialValue={destination?.address_label}
         onSelect={(location) => handleSelect('destination', location)}
         onClear={() => clearLocation('destination')}
       />
@@ -221,7 +267,28 @@ const styles = StyleSheet.create({
   container: { flex: 1, padding: 16, backgroundColor: '#FFFFFF' },
   title: { fontSize: 22, fontWeight: '600', marginBottom: 16, color: '#111827' },
   field: { marginBottom: 16, zIndex: 1 },
-  label: { fontSize: 14, fontWeight: '500', marginBottom: 6, color: '#374151' },
+  fieldHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  label: { fontSize: 14, fontWeight: '500', color: '#374151' },
+  currentLocationBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    backgroundColor: '#eff6ff',
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+  },
+  currentLocationBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#2563eb',
+  },
   inputRow: { flexDirection: 'row', alignItems: 'center' },
   input: {
     flex: 1,
