@@ -1,43 +1,101 @@
-import React from 'react';
-import { View, Text, TouchableOpacity } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import OneMapView, { MapPin, LatLng } from '../../components/OneMapView';
 import { TurnLeftIcon, HazardAlertIcon } from '../../components/SvgIcons';
+import { useApp } from '../../context/AppContext';
 import { styles } from './NavActiveScreen.styles';
 
-// Section Nav Active Mock Data
-/** Live walking route: current user position → Orchard Rd turn point */
-const MOCK_NAV_CENTER: LatLng = { lat: 1.3002, lng: 103.8440 };
-
-const MOCK_NAV_ROUTE: LatLng[] = [
-  { lat: 1.2985, lng: 103.8460 }, // User current position
-  { lat: 1.2990, lng: 103.8450 },
-  { lat: 1.2996, lng: 103.8438 },
-  { lat: 1.3002, lng: 103.8425 },
-  { lat: 1.3008, lng: 103.8410 },
-  { lat: 1.3012, lng: 103.8395 }, // Turn left onto Orchard Rd
-  { lat: 1.3016, lng: 103.8365 }, // Orchard Central destination
-];
-
-const MOCK_NAV_PINS: MapPin[] = [
-  {
-    id: 'user-loc',
-    position: { lat: 1.2985, lng: 103.8460 },
-    type: 'user',
-    label: 'You are here',
-  },
-  {
-    id: 'dest',
-    position: { lat: 1.3016, lng: 103.8365 },
-    type: 'destination',
-    label: 'Orchard Central',
-    detail: 'Your destination · 650 m',
-  },
-];
-// End Section Nav Active Mock Data
+const DEFAULT_CENTER: LatLng = { lat: 1.3002, lng: 103.8440 };
 
 export default function NavActiveScreen({ navigation }: any) {
   // Section Nav Active Logic
+  const {
+    selectedRoute,
+    selectedRouteDetail,
+    activeNavSession,
+    isNavigating,
+    navTracking,
+    trackNavPosition,
+    endNavigationSession,
+  } = useApp();
+
+  const polyline = selectedRouteDetail?.polyline ?? [];
+  const routeCoords: LatLng[] = polyline.map(([lat, lng]) => ({ lat, lng }));
+
+  const initialCoord: LatLng =
+    routeCoords.length > 0 ? routeCoords[0] : DEFAULT_CENTER;
+
+  const [currentCoord, setCurrentCoord] = useState<LatLng>(initialCoord);
+  const [stepIndex, setStepIndex] = useState<number>(0);
+
+  // Periodic navigation progress simulation & tracking updates
+  useEffect(() => {
+    if (!isNavigating && !activeNavSession) {
+      return;
+    }
+
+    const interval = setInterval(() => {
+      if (routeCoords.length === 0) return;
+
+      setStepIndex((prev) => {
+        const next = Math.min(prev + 1, routeCoords.length - 1);
+        const targetPoint = routeCoords[next];
+        if (targetPoint) {
+          setCurrentCoord(targetPoint);
+          // Typical walking speed ~4.5 km/h
+          trackNavPosition([targetPoint.lat, targetPoint.lng], 4.5).catch((err) => {
+            console.warn('Navigation tracking update error:', err);
+          });
+        }
+        return next;
+      });
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, [isNavigating, activeNavSession, routeCoords, trackNavPosition]);
+
+  // Destination Arrival handler
+  useEffect(() => {
+    if (navTracking?.status === 'COMPLETED') {
+      Alert.alert(
+        'Destination Reached!',
+        'You have arrived at your destination safely. Route confidence updated.',
+        [
+          {
+            text: 'Done',
+            onPress: () => {
+              navigation.navigate('MainTabs');
+            },
+          },
+        ]
+      );
+    }
+  }, [navTracking?.status, navigation]);
+
+  const handleEndNavigation = () => {
+    Alert.alert(
+      'Exit Navigation',
+      'Are you sure you want to stop walking navigation?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Exit',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await endNavigationSession(true);
+            } catch (err) {
+              console.warn('End navigation error:', err);
+            } finally {
+              navigation.navigate('MainTabs');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleViewHazards = () => {
     navigation.navigate('NavHazards');
   };
@@ -45,6 +103,43 @@ export default function NavActiveScreen({ navigation }: any) {
   const handleReportHazard = () => {
     navigation.navigate('FeedReport');
   };
+
+  // Pins configuration
+  const pins: MapPin[] = [
+    {
+      id: 'user-loc',
+      position: currentCoord,
+      type: 'user',
+      label: 'You are here',
+    },
+  ];
+
+  if (routeCoords.length > 0) {
+    const dest = routeCoords[routeCoords.length - 1];
+    pins.push({
+      id: 'dest',
+      position: dest,
+      type: 'destination',
+      label: selectedRoute.name || 'Destination',
+      detail: navTracking?.remaining_dist != null ? `${Math.round(navTracking.remaining_dist)} m left` : undefined,
+    });
+  }
+
+  const nextInstruction =
+    navTracking?.next_instruction ||
+    (selectedRouteDetail?.steps && selectedRouteDetail.steps.length > 0
+      ? selectedRouteDetail.steps[0]
+      : 'Continue along route');
+
+  const remainingDistance =
+    navTracking?.remaining_dist != null
+      ? `${Math.round(navTracking.remaining_dist)} m left`
+      : `${selectedRoute.distance} left`;
+
+  const remainingTime =
+    navTracking?.remaining_time != null
+      ? `${Math.round(navTracking.remaining_time / 60)} min`
+      : selectedRoute.time;
   // End Section Nav Active Logic
 
   return (
@@ -53,10 +148,10 @@ export default function NavActiveScreen({ navigation }: any) {
       <View style={styles.navActive_innerContainer}>
         {/* Live OneMap Navigation Map */}
         <OneMapView
-          center={MOCK_NAV_CENTER}
+          center={currentCoord}
           zoom={16}
-          routeCoordinates={MOCK_NAV_ROUTE}
-          pins={MOCK_NAV_PINS}
+          routeCoordinates={routeCoords}
+          pins={pins}
         />
 
         {/* Top Guidance HUD */}
@@ -66,10 +161,22 @@ export default function NavActiveScreen({ navigation }: any) {
               <TurnLeftIcon size={24} />
             </View>
             <View style={styles.navActive_innerTurnTextCol}>
-              <Text style={styles.navActive_innerTurnMain}>Turn left onto Orchard Rd</Text>
-              <Text style={styles.navActive_innerTurnSub}>in 60 m · sheltered walkway ahead</Text>
+              <Text style={styles.navActive_innerTurnMain}>{nextInstruction}</Text>
+              <Text style={styles.navActive_innerTurnSub}>
+                {remainingDistance} · sheltered walkway
+              </Text>
             </View>
           </View>
+
+          {/* Speed Warning Banner */}
+          {navTracking?.motion_warning ? (
+            <View style={styles.navActive_innerSpeedWarning}>
+              <HazardAlertIcon size={18} />
+              <Text style={styles.navActive_innerSpeedWarningText}>
+                Walking safety alert: high speed detected (&gt;25 km/h).
+              </Text>
+            </View>
+          ) : null}
 
           <TouchableOpacity
             style={styles.navActive_innerHazardBanner}
@@ -86,16 +193,25 @@ export default function NavActiveScreen({ navigation }: any) {
         {/* Bottom ETA HUD */}
         <View style={styles.navActive_innerBottomHud}>
           <View style={styles.navActive_innerEtaGroup}>
-            <Text style={styles.navActive_innerEtaTime}>8 min</Text>
-            <Text style={styles.navActive_innerEtaDist}>ETA · 650 m left</Text>
+            <Text style={styles.navActive_innerEtaTime}>{remainingTime}</Text>
+            <Text style={styles.navActive_innerEtaDist}>ETA · {remainingDistance}</Text>
           </View>
-          <TouchableOpacity
-            style={styles.navActive_innerButtonReport}
-            onPress={handleReportHazard}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.navActive_innerButtonReportText}>+ Report Hazard</Text>
-          </TouchableOpacity>
+          <View style={styles.navActive_innerButtonActions}>
+            <TouchableOpacity
+              style={styles.navActive_innerButtonReport}
+              onPress={handleReportHazard}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.navActive_innerButtonReportText}>+ Report</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.navActive_innerButtonExit}
+              onPress={handleEndNavigation}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.navActive_innerButtonExitText}>Exit</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
       {/* End Section Nav Active */}
