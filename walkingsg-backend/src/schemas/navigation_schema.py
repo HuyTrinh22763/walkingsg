@@ -4,17 +4,7 @@ from pydantic import Field, field_validator
 
 from src.schemas.access_schema import BaseRequest, BaseResponse
 from src.schemas.route_schema import RouteVariantSummary
-
-
-def _validate_coord(
-    value: tuple[float, float], field_name: str
-) -> tuple[float, float]:
-    latitude, longitude = value
-    if not -90.0 <= latitude <= 90.0:
-        raise ValueError(f"{field_name} latitude must be between -90 and 90")
-    if not -180.0 <= longitude <= 180.0:
-        raise ValueError(f"{field_name} longitude must be between -180 and 180")
-    return value
+from src.utils.index import validate_coordinates
 
 
 class NavStartRequest(BaseRequest):
@@ -41,7 +31,7 @@ class NavTrackRequest(BaseRequest):
     def validate_current_coord(
         cls, value: tuple[float, float]
     ) -> tuple[float, float]:
-        return _validate_coord(value, "current_coord")
+        return validate_coordinates(value, "current_coord")
 
 
 class NavTrackOut(BaseResponse):
