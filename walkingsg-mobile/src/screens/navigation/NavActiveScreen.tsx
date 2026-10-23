@@ -28,7 +28,7 @@ export default function NavActiveScreen({ navigation }: any) {
   const routeCoords: LatLng[] = polyline.map(([lat, lng]) => ({ lat, lng }));
 
   const initialCoord: LatLng =
-    userGpsLocation
+    gpsStatus === 'granted' && userGpsLocation
       ? { lat: userGpsLocation.latitude, lng: userGpsLocation.longitude }
       : routeCoords.length > 0
       ? routeCoords[0]
@@ -145,7 +145,7 @@ export default function NavActiveScreen({ navigation }: any) {
       id: 'user-loc',
       position: currentCoord,
       type: 'user',
-      label: 'You are here',
+      label: gpsStatus === 'granted' ? 'You are here' : 'Start Point',
     },
   ];
 
@@ -191,33 +191,34 @@ export default function NavActiveScreen({ navigation }: any) {
 
         {/* Top Guidance HUD */}
         <View style={styles.navActive_innerTopGuidance}>
-          <View style={styles.navActive_innerTurnBanner}>
-            <View style={styles.navActive_innerTurnIconBox}>
-              <TurnLeftIcon size={24} />
+          {gpsStatus === 'granted' ? (
+            <View style={styles.navActive_innerTurnBanner}>
+              <View style={styles.navActive_innerTurnIconBox}>
+                <TurnLeftIcon size={24} />
+              </View>
+              <View style={styles.navActive_innerTurnTextCol}>
+                <Text style={styles.navActive_innerTurnMain}>{nextInstruction}</Text>
+                <Text style={styles.navActive_innerTurnSub}>
+                  {remainingDistance} · sheltered walkway
+                </Text>
+              </View>
             </View>
-            <View style={styles.navActive_innerTurnTextCol}>
-              <Text style={styles.navActive_innerTurnMain}>{nextInstruction}</Text>
-              <Text style={styles.navActive_innerTurnSub}>
-                {remainingDistance} · sheltered walkway
-              </Text>
+          ) : (
+            <View style={[styles.navActive_innerTurnBanner, { backgroundColor: '#374151' }]}>
+              <View style={styles.navActive_innerTurnTextCol}>
+                <Text style={styles.navActive_innerTurnMain}>Live Navigation Disabled</Text>
+                <Text style={styles.navActive_innerTurnSub}>
+                  GPS access is required for real-time tracking
+                </Text>
+              </View>
             </View>
-          </View>
-
-          {/* Speed Warning Banner */}
-          {navTracking?.motion_warning ? (
-            <View style={styles.navActive_innerSpeedWarning}>
-              <HazardAlertIcon size={18} />
-              <Text style={styles.navActive_innerSpeedWarningText}>
-                Walking safety alert: high speed detected (&gt;25 km/h).
-              </Text>
-            </View>
-          ) : null}
+          )}
 
           {/* GPS Disabled Banner */}
-          {gpsStatus === 'denied' ? (
+          {gpsStatus !== 'granted' ? (
             <View style={styles.navActive_innerGpsBanner}>
               <Text style={styles.navActive_innerGpsBannerText}>
-                📍 GPS Disabled. Live location tracking is paused.
+                Enable GPS to start live turn-by-turn navigation.
               </Text>
               <TouchableOpacity
                 style={styles.navActive_innerGpsBannerBtn}
@@ -226,6 +227,16 @@ export default function NavActiveScreen({ navigation }: any) {
               >
                 <Text style={styles.navActive_innerGpsBannerBtnText}>Enable GPS</Text>
               </TouchableOpacity>
+            </View>
+          ) : null}
+
+          {/* Speed Warning Banner (active only when live navigation is enabled) */}
+          {gpsStatus === 'granted' && navTracking?.motion_warning ? (
+            <View style={styles.navActive_innerSpeedWarning}>
+              <HazardAlertIcon size={18} />
+              <Text style={styles.navActive_innerSpeedWarningText}>
+                Walking safety alert: high speed detected (&gt;25 km/h).
+              </Text>
             </View>
           ) : null}
 
@@ -244,8 +255,14 @@ export default function NavActiveScreen({ navigation }: any) {
         {/* Bottom ETA HUD */}
         <View style={styles.navActive_innerBottomHud}>
           <View style={styles.navActive_innerEtaGroup}>
-            <Text style={styles.navActive_innerEtaTime}>{remainingTime}</Text>
-            <Text style={styles.navActive_innerEtaDist}>ETA · {remainingDistance}</Text>
+            <Text style={styles.navActive_innerEtaTime}>
+              {gpsStatus === 'granted' ? remainingTime : 'Paused'}
+            </Text>
+            <Text style={styles.navActive_innerEtaDist}>
+              {gpsStatus === 'granted'
+                ? `ETA · ${remainingDistance}`
+                : 'GPS Disabled · Live Navigation Off'}
+            </Text>
           </View>
           <View style={styles.navActive_innerButtonActions}>
             <TouchableOpacity
