@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useEffect } from 'react';
 import { ActivityIndicator, Alert, View, Text, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import OneMapView, { OneMapViewHandle, MapPin, LatLng } from '../../components/OneMapView';
@@ -11,7 +11,22 @@ const SINGAPORE_CENTER: LatLng = { lat: 1.3521, lng: 103.8198 };
 export default function MapSearchScreen({ navigation }: any) {
   // Section Map Search Logic
   const mapRef = useRef<OneMapViewHandle | null>(null);
-  const { generateRoutes, isRouteLoading, origin, destination, selectedRouteDetail } = useApp();
+  const {
+    generateRoutes,
+    isRouteLoading,
+    origin,
+    destination,
+    selectedRouteDetail,
+    gpsStatus,
+    userGpsLocation,
+    useCurrentLocationAsOrigin,
+  } = useApp();
+
+  useEffect(() => {
+    if (!origin && gpsStatus === 'granted') {
+      useCurrentLocationAsOrigin().catch(() => {});
+    }
+  }, [origin, gpsStatus, useCurrentLocationAsOrigin]);
 
   const routeCoordinates: LatLng[] =
     selectedRouteDetail && selectedRouteDetail.polyline.length > 0
@@ -40,6 +55,8 @@ export default function MapSearchScreen({ navigation }: any) {
 
   const mapCenter: LatLng = origin
     ? { lat: origin.latitude, lng: origin.longitude }
+    : userGpsLocation
+    ? { lat: userGpsLocation.latitude, lng: userGpsLocation.longitude }
     : destination
     ? { lat: destination.latitude, lng: destination.longitude }
     : SINGAPORE_CENTER;
