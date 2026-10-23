@@ -42,6 +42,19 @@ def is_within_singapore(latitude: float, longitude: float) -> bool:
     )
 
 
+def validate_coordinates(
+    value: tuple[float, float], field_name: str = "coordinates"
+) -> tuple[float, float]:
+    """Validates that a (latitude, longitude) pair is within Earth bounds."""
+    latitude, longitude = value
+    if not -90.0 <= latitude <= 90.0:
+        raise ValueError(f"{field_name} latitude must be between -90 and 90")
+    if not -180.0 <= longitude <= 180.0:
+        raise ValueError(f"{field_name} longitude must be between -180 and 180")
+    return value
+
+
+
 def haversine_distance(
     coord1: tuple[float, float], coord2: tuple[float, float]
 ) -> float:
