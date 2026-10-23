@@ -14,7 +14,9 @@ export default function RouteExpandedScreen({ navigation }: any) {
     selectedRouteDetail,
     fetchRouteDetail,
     isRouteDetailLoading,
+    startNavigationSession,
   } = useApp();
+  const [isStartingNav, setIsStartingNav] = React.useState(false);
 
   useEffect(() => {
     fetchRouteDetail(selectedRoute.id).catch((error) => {
@@ -29,8 +31,17 @@ export default function RouteExpandedScreen({ navigation }: any) {
       : selectedRoute.details;
   const nextRoute = routes.find((route) => route.id !== selectedRoute.id);
 
-  const handleStartRoute = () => {
-    navigation.navigate('NavActive');
+  const handleStartRoute = async () => {
+    try {
+      setIsStartingNav(true);
+      await startNavigationSession(selectedRoute.id);
+      navigation.navigate('NavActive');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Please try again.';
+      Alert.alert('Navigation could not be started', message);
+    } finally {
+      setIsStartingNav(false);
+    }
   };
   // End Section Route Expanded Logic
 
@@ -95,11 +106,16 @@ export default function RouteExpandedScreen({ navigation }: any) {
           )}
 
           <TouchableOpacity
-            style={styles.routeExpanded_innerButtonStart}
+            style={[styles.routeExpanded_innerButtonStart, isStartingNav && { opacity: 0.7 }]}
             onPress={handleStartRoute}
+            disabled={isStartingNav}
             activeOpacity={0.85}
           >
-            <Text style={styles.routeExpanded_innerButtonStartText}>Start Navigation</Text>
+            {isStartingNav ? (
+              <ActivityIndicator size="small" color="#ffffff" />
+            ) : (
+              <Text style={styles.routeExpanded_innerButtonStartText}>Start Navigation</Text>
+            )}
           </TouchableOpacity>
         </View>
 
