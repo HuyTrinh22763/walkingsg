@@ -4,8 +4,14 @@ import { INITIAL_ROUTES, INITIAL_FEED_POSTS } from '../constants/mockData';
 import { authService } from '../services/authService';
 import { profileService } from '../services/profileService';
 import { routeService } from '../services/routeService';
+import { navigationService } from '../services/navigationService';
 import { toRouteCards } from '../types/route';
 import type { RouteCoord, RouteDetailOut, RouteSearchOut } from '../types/route';
+import type {
+  NavStartResponse,
+  NavTrackResponse,
+  NavEndResponse,
+} from '../types/navigation';
 import type {
   SignUpRequest,
   SignUpResponse,
@@ -75,6 +81,12 @@ interface AppContextType {
   selectedRouteDetail: RouteDetailOut | null;
   fetchRouteDetail: (routeId: string) => Promise<RouteDetailOut>;
   isRouteDetailLoading: boolean;
+  activeNavSession: NavStartResponse | null;
+  isNavigating: boolean;
+  navTracking: NavTrackResponse | null;
+  startNavigationSession: (routeId: string) => Promise<NavStartResponse>;
+  trackNavPosition: (coord: [number, number], speedKmh: number) => Promise<NavTrackResponse>;
+  endNavigationSession: (manualCancel?: boolean) => Promise<NavEndResponse>;
   feedPosts: FeedPostModel[];
   addFeedPost: (post: Omit<FeedPostModel, 'id' | 'timeAgo'>) => void;
   isMapOutOfBounds: boolean;
@@ -152,6 +164,9 @@ export function AppProvider({ children }: { children?: ReactNode }): ReactElemen
   const [isRouteDetailLoading, setIsRouteDetailLoading] = useState<boolean>(false);
   const [feedPosts, setFeedPosts] = useState<FeedPostModel[]>(INITIAL_FEED_POSTS);
   const [isMapOutOfBounds, setIsMapOutOfBounds] = useState<boolean>(false);
+  const [activeNavSession, setActiveNavSession] = useState<NavStartResponse | null>(null);
+  const [isNavigating, setIsNavigating] = useState<boolean>(false);
+  const [navTracking, setNavTracking] = useState<NavTrackResponse | null>(null);
   const locationState = useLocationState();
 
   const requireSession = (): {
@@ -301,6 +316,63 @@ export function AppProvider({ children }: { children?: ReactNode }): ReactElemen
     }
   };
 
+  const startNavigationSession = async (routeId: string): Promise<NavStartResponse> => {
+    const { token, clientId } = requireSession();
+    const session = await navigationService.startNavigation(
+      { route_id: routeId },
+      token,
+      clientId
+    );
+    setActiveNavSession(session);
+    setIsNavigating(true);
+    setNavTracking(null);
+    return session;
+  };
+
+  const trackNavPosition = async (
+    coord: [number, number],
+    speedKmh: number
+  ): Promise<NavTrackResponse> => {
+    const { token, clientId } = requireSession();
+    if (!activeNavSession) {
+      throw new Error('No active navigation session');
+    }
+    const update = await navigationService.trackPosition(
+      {
+        session_id: activeNavSession.session_id,
+        current_coord: coord,
+        speed_kmh: speedKmh,
+      },
+      token,
+      clientId
+    );
+    setNavTracking(update);
+    if (update.status === 'COMPLETED') {
+      setIsNavigating(false);
+    }
+    return update;
+  };
+
+  const endNavigationSession = async (
+    manualCancel = false
+  ): Promise<NavEndResponse> => {
+    const { token, clientId } = requireSession();
+    if (!activeNavSession) {
+      throw new Error('No active navigation session');
+    }
+    const result = await navigationService.endNavigation(
+      {
+        session_id: activeNavSession.session_id,
+        manual_cancel: manualCancel,
+      },
+      token,
+      clientId
+    );
+    setActiveNavSession(null);
+    setIsNavigating(false);
+    return result;
+  };
+
   return (
     <AppContext.Provider
       value={{
@@ -327,6 +399,12 @@ export function AppProvider({ children }: { children?: ReactNode }): ReactElemen
         selectedRouteDetail,
         fetchRouteDetail,
         isRouteDetailLoading,
+        activeNavSession,
+        isNavigating,
+        navTracking,
+        startNavigationSession,
+        trackNavPosition,
+        endNavigationSession,
         feedPosts,
         addFeedPost,
         isMapOutOfBounds,
