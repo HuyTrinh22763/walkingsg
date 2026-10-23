@@ -99,6 +99,10 @@ interface AppContextType {
     location: LocationResponse
   ) => Promise<CoordinateValidationResponse>;
   clearLocation: (pointType: PointType) => void;
+  userGpsLocation: { latitude: number; longitude: number } | null;
+  gpsStatus: 'prompt' | 'granted' | 'denied';
+  requestGpsPermission: () => Promise<boolean>;
+  useCurrentLocationAsOrigin: () => Promise<boolean>;
 }
 
 const DEFAULT_USER: UserPreferences = {
