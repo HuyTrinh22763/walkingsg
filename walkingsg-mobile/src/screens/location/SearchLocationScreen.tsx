@@ -26,7 +26,6 @@ interface LocationFieldProps {
   isSelected: boolean;
   isLocked: boolean;
   initialValue?: string;
-  headerAction?: React.ReactNode;
   onSelect: (location: LocationResponse) => Promise<boolean>;
   onClear: () => void;
 }
@@ -37,7 +36,6 @@ function LocationField({
   isSelected,
   isLocked,
   initialValue,
-  headerAction,
   onSelect,
   onClear,
 }: LocationFieldProps) {
@@ -107,10 +105,7 @@ function LocationField({
 
   return (
     <View style={styles.field}>
-      <View style={styles.fieldHeaderRow}>
-        <Text style={styles.label}>{label}</Text>
-        {headerAction}
-      </View>
+      <Text style={styles.label}>{label}</Text>
       <View style={styles.inputRow}>
         <TextInput
           style={[styles.input, isSelected && styles.inputSelected]}
@@ -162,21 +157,10 @@ export default function SearchLocationScreen({ navigation, onContinue }: SearchL
     clearLocation,
     generateRoutes,
     isRouteLoading,
-    useCurrentLocationAsOrigin,
   } = useApp();
   const [validating, setValidating] = useState<PointType | null>(null);
-  const [isLocating, setIsLocating] = useState(false);
-  const isLoading = validating !== null || isRouteLoading || isLocating;
+  const isLoading = validating !== null || isRouteLoading;
   const canContinue = origin !== null && destination !== null && !isLoading;
-
-  const handleUseCurrentLocation = async () => {
-    setIsLocating(true);
-    try {
-      await useCurrentLocationAsOrigin();
-    } finally {
-      setIsLocating(false);
-    }
-  };
 
   const handleSelect = async (pointType: PointType, location: LocationResponse): Promise<boolean> => {
     setValidating(pointType);
@@ -221,18 +205,6 @@ export default function SearchLocationScreen({ navigation, onContinue }: SearchL
         isSelected={origin !== null}
         isLocked={isLoading}
         initialValue={origin?.address_label}
-        headerAction={
-          <Pressable
-            onPress={handleUseCurrentLocation}
-            disabled={isLoading}
-            style={({ pressed }) => [styles.currentLocationBtn, (pressed || isLoading) && { opacity: 0.6 }]}
-          >
-            {isLocating ? (
-              <ActivityIndicator size="small" color="#2563eb" style={{ marginRight: 4 }} />
-            ) : null}
-            <Text style={styles.currentLocationBtnText}>📍 Use Current Location</Text>
-          </Pressable>
-        }
         onSelect={(location) => handleSelect('origin', location)}
         onClear={() => clearLocation('origin')}
       />
@@ -267,28 +239,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, padding: 16, backgroundColor: '#FFFFFF' },
   title: { fontSize: 22, fontWeight: '600', marginBottom: 16, color: '#111827' },
   field: { marginBottom: 16, zIndex: 1 },
-  fieldHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  label: { fontSize: 14, fontWeight: '500', color: '#374151' },
-  currentLocationBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 3,
-    paddingHorizontal: 8,
-    borderRadius: 6,
-    backgroundColor: '#eff6ff',
-    borderWidth: 1,
-    borderColor: '#bfdbfe',
-  },
-  currentLocationBtnText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#2563eb',
-  },
+  label: { fontSize: 14, fontWeight: '500', marginBottom: 6, color: '#374151' },
   inputRow: { flexDirection: 'row', alignItems: 'center' },
   input: {
     flex: 1,
