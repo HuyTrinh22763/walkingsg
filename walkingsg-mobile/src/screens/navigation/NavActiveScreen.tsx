@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as Location from 'expo-location';
 import OneMapView, { MapPin, LatLng } from '../../components/OneMapView';
 import { TurnLeftIcon, HazardAlertIcon } from '../../components/SvgIcons';
 import { useApp } from '../../context/AppContext';
@@ -18,42 +19,76 @@ export default function NavActiveScreen({ navigation }: any) {
     navTracking,
     trackNavPosition,
     endNavigationSession,
+    gpsStatus,
+    userGpsLocation,
+    requestGpsPermission,
   } = useApp();
 
   const polyline = selectedRouteDetail?.polyline ?? [];
   const routeCoords: LatLng[] = polyline.map(([lat, lng]) => ({ lat, lng }));
 
   const initialCoord: LatLng =
-    routeCoords.length > 0 ? routeCoords[0] : DEFAULT_CENTER;
+    userGpsLocation
+      ? { lat: userGpsLocation.latitude, lng: userGpsLocation.longitude }
+      : routeCoords.length > 0
+      ? routeCoords[0]
+      : DEFAULT_CENTER;
 
   const [currentCoord, setCurrentCoord] = useState<LatLng>(initialCoord);
-  const [stepIndex, setStepIndex] = useState<number>(0);
 
-  // Periodic navigation progress simulation & tracking updates
+  // Ask for user's consent for GPS usage on mount if pending
   useEffect(() => {
-    if (!isNavigating && !activeNavSession) {
+    if (gpsStatus === 'prompt') {
+      requestGpsPermission();
+    }
+  }, [gpsStatus, requestGpsPermission]);
+
+  // Real device hardware GPS position subscription
+  useEffect(() => {
+    if (gpsStatus !== 'granted' || (!isNavigating && !activeNavSession)) {
       return;
     }
 
-    const interval = setInterval(() => {
-      if (routeCoords.length === 0) return;
+    let subscription: Location.LocationSubscription | null = null;
+    let isCancelled = false;
 
-      setStepIndex((prev) => {
-        const next = Math.min(prev + 1, routeCoords.length - 1);
-        const targetPoint = routeCoords[next];
-        if (targetPoint) {
-          setCurrentCoord(targetPoint);
-          // Typical walking speed ~4.5 km/h
-          trackNavPosition([targetPoint.lat, targetPoint.lng], 4.5).catch((err) => {
-            console.warn('Navigation tracking update error:', err);
-          });
-        }
-        return next;
-      });
-    }, 4000);
+    async function startWatching() {
+      try {
+        subscription = await Location.watchPositionAsync(
+          {
+            accuracy: Location.Accuracy.High,
+            timeInterval: 2000,
+            distanceInterval: 2,
+          },
+          (loc) => {
+            if (isCancelled) return;
+            const lat = loc.coords.latitude;
+            const lng = loc.coords.longitude;
+            const speedKmh =
+              loc.coords.speed != null && loc.coords.speed >= 0
+                ? loc.coords.speed * 3.6
+                : 0;
 
-    return () => clearInterval(interval);
-  }, [isNavigating, activeNavSession, routeCoords, trackNavPosition]);
+            setCurrentCoord({ lat, lng });
+            trackNavPosition([lat, lng], speedKmh).catch((err) => {
+              console.warn('Real GPS tracking update error:', err);
+            });
+          }
+        );
+      } catch (error) {
+        console.warn('Failed to start real GPS tracking:', error);
+      }
+    }
+
+    startWatching();
+
+    return () => {
+      isCancelled = true;
+      if (subscription) {
+        subscription.remove();
+      }
+    };
+  }, [gpsStatus, isNavigating, activeNavSession, trackNavPosition]);
 
   // Destination Arrival handler
   useEffect(() => {
@@ -175,6 +210,22 @@ export default function NavActiveScreen({ navigation }: any) {
               <Text style={styles.navActive_innerSpeedWarningText}>
                 Walking safety alert: high speed detected (&gt;25 km/h).
               </Text>
+            </View>
+          ) : null}
+
+          {/* GPS Disabled Banner */}
+          {gpsStatus === 'denied' ? (
+            <View style={styles.navActive_innerGpsBanner}>
+              <Text style={styles.navActive_innerGpsBannerText}>
+                📍 GPS Disabled. Live location tracking is paused.
+              </Text>
+              <TouchableOpacity
+                style={styles.navActive_innerGpsBannerBtn}
+                onPress={() => requestGpsPermission()}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.navActive_innerGpsBannerBtnText}>Enable GPS</Text>
+              </TouchableOpacity>
             </View>
           ) : null}
 
