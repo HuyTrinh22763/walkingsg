@@ -5,7 +5,22 @@ from src.utils.index import (
     distance_to_polyline,
     haversine_distance,
     point_to_segment_distance,
+    validate_coordinates,
 )
+
+
+def test_validate_coordinates() -> None:
+    # Valid
+    assert validate_coordinates((1.35, 103.8), "coord") == (1.35, 103.8)
+
+    # Invalid latitude
+    with pytest.raises(ValueError, match="latitude"):
+        validate_coordinates((95.0, 103.8), "test_coord")
+
+    # Invalid longitude
+    with pytest.raises(ValueError, match="longitude"):
+        validate_coordinates((1.35, 190.0), "test_coord")
+
 
 
 def test_point_to_segment_distance_on_segment() -> None:
