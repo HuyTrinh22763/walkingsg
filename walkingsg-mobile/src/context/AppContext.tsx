@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, ReactNode, ReactElement } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, ReactElement } from 'react';
 import type { RouteModel, FeedPostModel } from '../constants/mockData';
 import { INITIAL_ROUTES, INITIAL_FEED_POSTS } from '../constants/mockData';
 import { authService } from '../services/authService';
@@ -103,6 +103,7 @@ interface AppContextType {
   gpsStatus: 'prompt' | 'granted' | 'denied';
   requestGpsPermission: () => Promise<boolean>;
   useCurrentLocationAsOrigin: () => Promise<boolean>;
+  setupInitialGpsLocation: () => Promise<boolean>;
 }
 
 const DEFAULT_USER: UserPreferences = {
@@ -231,8 +232,19 @@ export function AppProvider({ children }: { children?: ReactNode }): ReactElemen
     setUser((prev: UserPreferences) =>
       toUserPreferences(profile, { ...prev, email: res.user_email })
     );
+    locationState.setupInitialGpsLocation().catch((err) => {
+      console.warn('GPS setup error on login:', err);
+    });
     return res;
   };
+
+  useEffect(() => {
+    if (auth.isAuthenticated && !locationState.origin && locationState.gpsStatus === 'prompt') {
+      locationState.setupInitialGpsLocation().catch((err) => {
+        console.warn('GPS setup error on auth change:', err);
+      });
+    }
+  }, [auth.isAuthenticated, locationState.origin, locationState.gpsStatus, locationState.setupInitialGpsLocation]);
 
   const forgotPassword = async (payload: ForgotPasswordRequest): Promise<boolean> => {
     return await authService.forgotPassword(payload);
