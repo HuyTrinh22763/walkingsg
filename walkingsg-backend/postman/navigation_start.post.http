@@ -1,0 +1,9 @@
+### Start Navigation Session
+POST http://localhost:3052/v1/api/navigation/start
+Content-Type: application/json
+x-client-id: {{client_id}}
+authorization: {{access_token}}
+
+{
+  "route_id": "{{route_id}}"
+}

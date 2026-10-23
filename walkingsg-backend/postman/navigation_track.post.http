@@ -1,0 +1,11 @@
+### Track Navigation Position
+POST http://localhost:3052/v1/api/navigation/track
+Content-Type: application/json
+x-client-id: {{client_id}}
+authorization: {{access_token}}
+
+{
+  "session_id": "{{session_id}}",
+  "current_coord": [1.3520, 103.6840],
+  "speed_kmh": 4.5
+}

@@ -1,0 +1,10 @@
+### End Navigation Session
+POST http://localhost:3052/v1/api/navigation/end
+Content-Type: application/json
+x-client-id: {{client_id}}
+authorization: {{access_token}}
+
+{
+  "session_id": "{{session_id}}",
+  "manual_cancel": true
+}
