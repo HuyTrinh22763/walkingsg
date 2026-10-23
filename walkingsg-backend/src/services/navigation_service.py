@@ -46,7 +46,7 @@ class NavigationService:
         self._route_service = route_service
 
     async def start_navigation(
-        self, user_id: PydanticObjectId, payload: NavStartRequest
+        self, payload: NavStartRequest, *, user_id: PydanticObjectId | None = None
     ) -> NavStartOut:
         try:
             route_obj_id = PydanticObjectId(payload.route_id)
@@ -57,15 +57,19 @@ class NavigationService:
         if not route:
             raise NotFoundError("Route not found")
 
+        target_user_id = user_id or route.user_id
+
         # Cancel any previous active navigation session for this user
-        active_session = await self._session_repo.find_active_by_user(user_id=user_id)
+        active_session = await self._session_repo.find_active_by_user(
+            user_id=target_user_id
+        )
         if active_session:
             await self._session_repo.complete_session(
                 session=active_session, status=NavigationStatus.CANCELLED
             )
 
         new_session = NavigationSessionModel.model_construct(
-            user_id=user_id,
+            user_id=target_user_id,
             route_id=route_obj_id,
             current_location=route.origin_coordinates,
             traversed_segment_ids=[],
@@ -82,7 +86,7 @@ class NavigationService:
         )
 
     async def track_position(
-        self, user_id: PydanticObjectId, payload: NavTrackRequest
+        self, payload: NavTrackRequest, *, user_id: PydanticObjectId | None = None
     ) -> NavTrackOut:
         try:
             session_obj_id = PydanticObjectId(payload.session_id)
@@ -93,7 +97,7 @@ class NavigationService:
         if not session:
             raise NotFoundError("Navigation session not found")
 
-        if session.user_id != user_id:
+        if user_id is not None and session.user_id != user_id:
             raise ForbiddenError("Access denied to this navigation session")
 
         if session.session_status != NavigationStatus.ACTIVE:
@@ -201,7 +205,7 @@ class NavigationService:
         )
 
     async def end_navigation(
-        self, user_id: PydanticObjectId, payload: NavEndRequest
+        self, payload: NavEndRequest, *, user_id: PydanticObjectId | None = None
     ) -> NavEndOut:
         try:
             session_obj_id = PydanticObjectId(payload.session_id)
@@ -212,7 +216,7 @@ class NavigationService:
         if not session:
             raise NotFoundError("Navigation session not found")
 
-        if session.user_id != user_id:
+        if user_id is not None and session.user_id != user_id:
             raise ForbiddenError("Access denied to this navigation session")
 
         final_status = (
