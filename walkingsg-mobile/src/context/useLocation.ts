@@ -8,6 +8,12 @@ import type {
   PointType,
 } from '../types/location';
 
+export const DEFAULT_SINGAPORE_ORIGIN: LocationResponse = {
+  address_label: 'Bencoolen St, Singapore',
+  latitude: 1.2966,
+  longitude: 103.8498,
+};
+
 export function useLocationState() {
   const [origin, setOrigin] = useState<LocationResponse | null>(null);
   const [destination, setDestination] = useState<LocationResponse | null>(null);
@@ -25,6 +31,7 @@ export function useLocationState() {
             style: 'cancel',
             onPress: () => {
               setGpsStatus('denied');
+              setOrigin(DEFAULT_SINGAPORE_ORIGIN);
               resolve(false);
             },
           },
@@ -38,11 +45,13 @@ export function useLocationState() {
                   resolve(true);
                 } else {
                   setGpsStatus('denied');
+                  setOrigin(DEFAULT_SINGAPORE_ORIGIN);
                   resolve(false);
                 }
               } catch (err) {
                 console.warn('GPS permission request failed:', err);
                 setGpsStatus('denied');
+                setOrigin(DEFAULT_SINGAPORE_ORIGIN);
                 resolve(false);
               }
             },
@@ -51,6 +60,42 @@ export function useLocationState() {
       );
     });
   }, []);
+
+  const setupInitialGpsLocation = useCallback(async (): Promise<boolean> => {
+    const granted = await requestGpsPermission();
+    if (!granted) {
+      setOrigin(DEFAULT_SINGAPORE_ORIGIN);
+      return false;
+    }
+
+    try {
+      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const { latitude, longitude } = loc.coords;
+      setUserGpsLocation({ latitude, longitude });
+
+      const validation = await locationService.validateCoordinates({
+        latitude,
+        longitude,
+        point_type: 'origin',
+      });
+
+      if (validation.is_valid) {
+        setOrigin({
+          address_label: 'Current Location',
+          latitude,
+          longitude,
+        });
+        return true;
+      } else {
+        setOrigin(DEFAULT_SINGAPORE_ORIGIN);
+        return false;
+      }
+    } catch (err) {
+      console.warn('Failed to obtain current GPS position:', err);
+      setOrigin(DEFAULT_SINGAPORE_ORIGIN);
+      return false;
+    }
+  }, [requestGpsPermission]);
 
   const useCurrentLocationAsOrigin = useCallback(async (): Promise<boolean> => {
     let granted = gpsStatus === 'granted';
@@ -130,5 +175,6 @@ export function useLocationState() {
     gpsStatus,
     requestGpsPermission,
     useCurrentLocationAsOrigin,
+    setupInitialGpsLocation,
   };
 }
