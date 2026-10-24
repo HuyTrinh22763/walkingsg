@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode, ReactElement } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode, ReactElement } from 'react';
 import type { RouteModel, FeedPostModel } from '../constants/mockData';
 import { INITIAL_ROUTES, INITIAL_FEED_POSTS } from '../constants/mockData';
 import { authService } from '../services/authService';
@@ -231,9 +231,6 @@ export function AppProvider({ children }: { children?: ReactNode }): ReactElemen
     setUser((prev: UserPreferences) =>
       toUserPreferences(profile, { ...prev, email: res.user_email })
     );
-    locationState.setupInitialGpsLocation().catch((err) => {
-      console.warn('GPS setup error on login:', err);
-    });
     return res;
   };
 
@@ -344,11 +341,13 @@ export function AppProvider({ children }: { children?: ReactNode }): ReactElemen
     return session;
   };
 
-  const trackNavPosition = async (
+  const trackNavPosition = useCallback(async (
     coord: [number, number],
     speedKmh: number
   ): Promise<NavTrackResponse> => {
-    const { token, clientId } = requireSession();
+    if (!auth.accessToken || !auth.userId) {
+      throw new Error('You are not logged in');
+    }
     if (!activeNavSession) {
       throw new Error('No active navigation session');
     }
@@ -358,15 +357,15 @@ export function AppProvider({ children }: { children?: ReactNode }): ReactElemen
         current_coord: coord,
         speed_kmh: speedKmh,
       },
-      token,
-      clientId
+      auth.accessToken,
+      auth.userId
     );
     setNavTracking(update);
     if (update.status === 'COMPLETED') {
       setIsNavigating(false);
     }
     return update;
-  };
+  }, [auth.accessToken, auth.userId, activeNavSession]);
 
   const endNavigationSession = async (
     manualCancel = false

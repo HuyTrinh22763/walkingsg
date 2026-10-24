@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
@@ -35,6 +35,13 @@ export default function NavActiveScreen({ navigation }: any) {
       : DEFAULT_CENTER;
 
   const [currentCoord, setCurrentCoord] = useState<LatLng>(initialCoord);
+  const trackRef = useRef(trackNavPosition);
+  const inFlightRef = useRef(false);
+  const pendingRef = useRef<{ coord: [number, number]; speedKmh: number } | null>(null);
+
+  useEffect(() => {
+    trackRef.current = trackNavPosition;
+  }, [trackNavPosition]);
 
   // Ask for user's consent for GPS usage on mount if pending
   useEffect(() => {
@@ -51,6 +58,26 @@ export default function NavActiveScreen({ navigation }: any) {
 
     let subscription: Location.LocationSubscription | null = null;
     let isCancelled = false;
+
+    const send = (coord: [number, number], speedKmh: number) => {
+      if (isCancelled) return;
+      if (inFlightRef.current) {
+        pendingRef.current = { coord, speedKmh };
+        return;
+      }
+      inFlightRef.current = true;
+      pendingRef.current = null;
+      trackRef.current(coord, speedKmh)
+        .catch((err) => {
+          console.warn('Real GPS tracking update error:', err);
+        })
+        .finally(() => {
+          inFlightRef.current = false;
+          const pending = pendingRef.current;
+          pendingRef.current = null;
+          if (pending && !isCancelled) send(pending.coord, pending.speedKmh);
+        });
+    };
 
     async function startWatching() {
       try {
@@ -70,9 +97,7 @@ export default function NavActiveScreen({ navigation }: any) {
                 : 0;
 
             setCurrentCoord({ lat, lng });
-            trackNavPosition([lat, lng], speedKmh).catch((err) => {
-              console.warn('Real GPS tracking update error:', err);
-            });
+            send([lat, lng], speedKmh);
           }
         );
       } catch (error) {
@@ -84,11 +109,13 @@ export default function NavActiveScreen({ navigation }: any) {
 
     return () => {
       isCancelled = true;
+      inFlightRef.current = false;
+      pendingRef.current = null;
       if (subscription) {
         subscription.remove();
       }
     };
-  }, [gpsStatus, isNavigating, activeNavSession, trackNavPosition]);
+  }, [gpsStatus, isNavigating, activeNavSession]);
 
   // Destination Arrival handler
   useEffect(() => {
