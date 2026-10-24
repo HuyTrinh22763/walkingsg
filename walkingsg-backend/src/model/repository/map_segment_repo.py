@@ -1,5 +1,5 @@
 from src.model.map_segment_model import MapSegmentModel
-from src.utils.index import haversine_distance
+from src.utils.index import clamp, haversine_distance
 
 _SEARCH_PADDING_DEG = 0.01
 
@@ -50,3 +50,15 @@ class MapSegmentRepository:
                     shortest = distance
                     nearest = segment
         return nearest
+
+    async def adjust_confidence(
+        self, *, segment_id: str, delta: float
+    ) -> MapSegmentModel | None:
+        segment = await MapSegmentModel.find_one({"segment_id": segment_id})
+        if segment is None:
+            return None
+        segment.confidence_score = float(
+            clamp(segment.confidence_score + delta, -20.0, 20.0)
+        )
+        await segment.save()
+        return segment

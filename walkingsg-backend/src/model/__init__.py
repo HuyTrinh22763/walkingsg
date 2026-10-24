@@ -1,4 +1,5 @@
 from src.model.credentials_model import CredentialsModel
+from src.model.hazard_model import HazardModel
 from src.model.key_token_model import KeyTokenModel
 from src.model.map_segment_model import MapSegmentModel
 from src.model.navigation_session_model import (
@@ -19,4 +20,5 @@ DOCUMENT_MODELS: list = [
     MapSegmentModel,
     RouteModel,
     NavigationSessionModel,
+    HazardModel,
 ]
