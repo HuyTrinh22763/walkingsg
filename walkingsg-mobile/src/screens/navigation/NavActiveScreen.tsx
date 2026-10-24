@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
@@ -35,6 +35,11 @@ export default function NavActiveScreen({ navigation }: any) {
       : DEFAULT_CENTER;
 
   const [currentCoord, setCurrentCoord] = useState<LatLng>(initialCoord);
+  const trackRef = useRef(trackNavPosition);
+
+  useEffect(() => {
+    trackRef.current = trackNavPosition;
+  }, [trackNavPosition]);
 
   // Ask for user's consent for GPS usage on mount if pending
   useEffect(() => {
@@ -70,7 +75,7 @@ export default function NavActiveScreen({ navigation }: any) {
                 : 0;
 
             setCurrentCoord({ lat, lng });
-            trackNavPosition([lat, lng], speedKmh).catch((err) => {
+            trackRef.current([lat, lng], speedKmh).catch((err) => {
               console.warn('Real GPS tracking update error:', err);
             });
           }
@@ -88,7 +93,7 @@ export default function NavActiveScreen({ navigation }: any) {
         subscription.remove();
       }
     };
-  }, [gpsStatus, isNavigating, activeNavSession, trackNavPosition]);
+  }, [gpsStatus, isNavigating, activeNavSession]);
 
   // Destination Arrival handler
   useEffect(() => {
