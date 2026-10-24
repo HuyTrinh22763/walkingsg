@@ -79,11 +79,7 @@ export const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: ThemeColors.ink,
-  },
-  navHazards_innerItemDist: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: ThemeColors.inkSoft,
+    flex: 1,
   },
   navHazards_innerButtonReroute: {
     minHeight: 46,

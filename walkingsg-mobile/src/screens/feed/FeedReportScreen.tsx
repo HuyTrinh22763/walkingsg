@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { TopBarHeader } from '../../components/TopBarHeader';
 import { useApp } from '../../context/AppContext';
+import { hazardService } from '../../services/hazardService';
+import type { HazardType } from '../../types/hazard';
 import { styles } from './FeedReportScreen.styles';
 
-const REPORT_CATEGORIES = [
+const REPORT_CATEGORIES: { id: HazardType; label: string; desc?: string }[] = [
   { id: 'lift', label: 'Lift or escalator down' },
   { id: 'flooding', label: 'Flooding or ponding' },
   { id: 'blocked', label: 'Path blocked' },
@@ -20,24 +22,34 @@ const REPORT_CATEGORIES = [
 
 export default function FeedReportScreen({ navigation }: any) {
   // Section Feed Report Logic
-  const { addFeedPost } = useApp();
-  const [selectedCategory, setSelectedCategory] = useState('unwalkable');
-  const [location, setLocation] = useState('Somerset Link Path near Exit B');
+  const { auth, origin } = useApp();
+  const [selectedCategory, setSelectedCategory] = useState<HazardType>('unwalkable');
+  const [submitting, setSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const blockReason = !auth.isAuthenticated
+    ? 'Log in to report a hazard.'
+    : !origin
+      ? 'Location required.'
+      : null;
 
-  const handleSubmit = () => {
-    const cat = REPORT_CATEGORIES.find(c => c.id === selectedCategory);
-    const title = cat ? `${cat.label} reported` : 'Hazard reported';
-
-    addFeedPost({
-      iconType: 'bad',
-      iconGlyph: 'hazard',
-      title,
-      desc: `Hazard reported near ${location}. Flagged to nearby pedestrians.`,
-    });
-
-    Alert.alert('Hazard Logged', 'Thanks — your hazard report has been logged.', [
-      { text: 'OK', onPress: () => navigation.goBack() },
-    ]);
+  const handleSubmit = async () => {
+    if (!auth.accessToken || !auth.userId || !origin || submitting) return;
+    setSubmitting(true);
+    setErrorMessage(null);
+    try {
+      await hazardService.reportHazard(auth.accessToken, auth.userId, {
+        hazard_type: selectedCategory,
+        latitude: origin.latitude,
+        longitude: origin.longitude,
+      });
+      Alert.alert('Hazard Logged', 'Thanks — your hazard report has been logged.', [
+        { text: 'OK', onPress: () => navigation.goBack() },
+      ]);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Could not report this hazard.');
+    } finally {
+      setSubmitting(false);
+    }
   };
   // End Section Feed Report Logic
 
@@ -49,7 +61,7 @@ export default function FeedReportScreen({ navigation }: any) {
         {/* Section Feed Report */}
         <View style={styles.feedReport_innerHeader}>
           <Text style={styles.feedReport_innerTitle}>What's the problem?</Text>
-          <Text style={styles.feedReport_innerSub}>We'll flag this to other walkers near Somerset MRT.</Text>
+          <Text style={styles.feedReport_innerSub}>We'll flag this to other walkers near you.</Text>
         </View>
 
         <View style={styles.feedReport_innerOptionsList}>
@@ -76,21 +88,25 @@ export default function FeedReportScreen({ navigation }: any) {
           })}
         </View>
 
-        <View style={styles.feedReport_innerField}>
-          <Text style={styles.feedReport_innerLabel}>Location</Text>
-          <TextInput
-            style={styles.feedReport_innerInput}
-            value={location}
-            onChangeText={setLocation}
-          />
-        </View>
+        {blockReason ? (
+          <Text style={styles.feedReport_innerNotice}>{blockReason}</Text>
+        ) : null}
+        {errorMessage ? (
+          <Text style={styles.feedReport_innerError}>{errorMessage}</Text>
+        ) : null}
 
         <TouchableOpacity
-          style={styles.feedReport_innerButtonSubmit}
+          style={[
+            styles.feedReport_innerButtonSubmit,
+            (blockReason || submitting) && styles.feedReport_innerButtonSubmit_disabled,
+          ]}
           onPress={handleSubmit}
+          disabled={Boolean(blockReason) || submitting}
           activeOpacity={0.85}
         >
-          <Text style={styles.feedReport_innerButtonSubmitText}>Submit Hazard Report</Text>
+          <Text style={styles.feedReport_innerButtonSubmitText}>
+            {submitting ? 'Submitting...' : 'Submit Hazard Report'}
+          </Text>
         </TouchableOpacity>
         {/* End Section Feed Report */}
       </ScrollView>

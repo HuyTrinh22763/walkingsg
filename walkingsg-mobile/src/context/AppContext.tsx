@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode, ReactElement } from 'react';
-import type { RouteModel, FeedPostModel } from '../constants/mockData';
-import { INITIAL_ROUTES, INITIAL_FEED_POSTS } from '../constants/mockData';
+import type { RouteModel } from '../constants/mockData';
+import { INITIAL_ROUTES } from '../constants/mockData';
 import { authService } from '../services/authService';
 import { profileService } from '../services/profileService';
 import { routeService } from '../services/routeService';
@@ -87,8 +87,6 @@ interface AppContextType {
   startNavigationSession: (routeId: string) => Promise<NavStartResponse>;
   trackNavPosition: (coord: [number, number], speedKmh: number) => Promise<NavTrackResponse>;
   endNavigationSession: (manualCancel?: boolean) => Promise<NavEndResponse>;
-  feedPosts: FeedPostModel[];
-  addFeedPost: (post: Omit<FeedPostModel, 'id' | 'timeAgo'>) => void;
   isMapOutOfBounds: boolean;
   toggleOutOfBounds: () => void;
   origin: LocationResponse | null;
@@ -166,7 +164,6 @@ export function AppProvider({ children }: { children?: ReactNode }): ReactElemen
   const [selectedRouteDetail, setSelectedRouteDetail] = useState<RouteDetailOut | null>(null);
   const [isRouteLoading, setIsRouteLoading] = useState<boolean>(false);
   const [isRouteDetailLoading, setIsRouteDetailLoading] = useState<boolean>(false);
-  const [feedPosts, setFeedPosts] = useState<FeedPostModel[]>(INITIAL_FEED_POSTS);
   const [isMapOutOfBounds, setIsMapOutOfBounds] = useState<boolean>(false);
   const [activeNavSession, setActiveNavSession] = useState<NavStartResponse | null>(null);
   const [isNavigating, setIsNavigating] = useState<boolean>(false);
@@ -267,16 +264,6 @@ export function AppProvider({ children }: { children?: ReactNode }): ReactElemen
     await profileService.deleteAccount(accessToken, userId, { confirmation: true });
     setAuth(DEFAULT_AUTH);
     setUser(DEFAULT_USER);
-    setFeedPosts(INITIAL_FEED_POSTS);
-  };
-
-  const addFeedPost = (post: Omit<FeedPostModel, 'id' | 'timeAgo'>) => {
-    const newPost: FeedPostModel = {
-      id: Date.now(),
-      timeAgo: 'Just now',
-      ...post,
-    };
-    setFeedPosts((prev: FeedPostModel[]) => [newPost, ...prev]);
   };
 
   const toggleOutOfBounds = () => {
@@ -419,8 +406,6 @@ export function AppProvider({ children }: { children?: ReactNode }): ReactElemen
         startNavigationSession,
         trackNavPosition,
         endNavigationSession,
-        feedPosts,
-        addFeedPost,
         isMapOutOfBounds,
         toggleOutOfBounds,
         ...locationState,
