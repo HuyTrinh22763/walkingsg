@@ -16,15 +16,6 @@ export interface RouteModel {
   details: string[];
 }
 
-export interface FeedPostModel {
-  id: number;
-  iconType: 'bad' | 'warn' | 'good';
-  iconGlyph: 'lift' | 'water' | 'shelter' | 'escalator' | 'hazard';
-  title: string;
-  timeAgo: string;
-  desc: string;
-}
-
 export const INITIAL_ROUTES: RouteModel[] = [
   {
     id: 'route-a',
@@ -101,41 +92,6 @@ export const INITIAL_ROUTES: RouteModel[] = [
       'Completely step-free path with smooth tarmac.',
       '70% shaded by rain trees along residential canal.',
     ],
-  },
-];
-
-export const INITIAL_FEED_POSTS: FeedPostModel[] = [
-  {
-    id: 1,
-    iconType: 'bad',
-    iconGlyph: 'lift',
-    title: 'Lift out of service',
-    timeAgo: '12 min ago',
-    desc: 'Bedok MRT Exit B lift down — avoid if using a wheelchair or scooter.',
-  },
-  {
-    id: 2,
-    iconType: 'warn',
-    iconGlyph: 'water',
-    title: 'Ponding reported',
-    timeAgo: '48 min ago',
-    desc: 'Standing water along the PCN near Tampines Ave 10 after the rain.',
-  },
-  {
-    id: 3,
-    iconType: 'good',
-    iconGlyph: 'shelter',
-    title: 'New sheltered path added',
-    timeAgo: 'Yesterday',
-    desc: 'A sheltered walkway now connects Somerset MRT to Orchard Central.',
-  },
-  {
-    id: 4,
-    iconType: 'warn',
-    iconGlyph: 'escalator',
-    title: 'Escalator maintenance',
-    timeAgo: '2 days ago',
-    desc: 'Novena MRT Exit A escalator under maintenance until Friday.',
   },
 ];
 /* End Section Mock Data */
