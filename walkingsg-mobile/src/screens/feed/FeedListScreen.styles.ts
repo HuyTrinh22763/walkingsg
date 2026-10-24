@@ -25,23 +25,13 @@ export const styles = StyleSheet.create({
     color: ThemeColors.inkSoft,
     marginTop: 2,
   },
-  feedList_innerSuccessBanner: {
-    backgroundColor: ThemeColors.canopyTint,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: ThemeColors.canopy,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  feedList_innerStatus: {
+    fontSize: 13,
+    color: ThemeColors.inkSoft,
     marginBottom: 14,
   },
-  feedList_innerSuccessText: {
-    flex: 1,
-    fontSize: 13,
-    fontWeight: '600',
-    color: ThemeColors.canopyDeep,
+  feedList_innerStatus_error: {
+    color: ThemeColors.hazard,
   },
   feedList_innerEntries: {
     backgroundColor: ThemeColors.card,
@@ -80,12 +70,6 @@ export const styles = StyleSheet.create({
     fontSize: 11,
     color: ThemeColors.inkFaint,
     fontWeight: '600',
-  },
-  feedList_innerEntryDesc: {
-    fontSize: 13,
-    color: ThemeColors.inkSoft,
-    lineHeight: 18,
-    paddingLeft: 26,
   },
   feedList_innerButtonReport: {
     minHeight: 46,
