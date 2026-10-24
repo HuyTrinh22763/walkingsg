@@ -77,25 +77,6 @@ export const styles = StyleSheet.create({
     borderRadius: 5,
     backgroundColor: ThemeColors.canopy,
   },
-  feedReport_innerField: {
-    gap: 6,
-    marginBottom: 20,
-  },
-  feedReport_innerLabel: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: ThemeColors.ink,
-  },
-  feedReport_innerInput: {
-    minHeight: 46,
-    borderWidth: 1.5,
-    borderColor: ThemeColors.lineStrong,
-    backgroundColor: ThemeColors.card,
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    fontSize: 14,
-    color: ThemeColors.ink,
-  },
   feedReport_innerButtonSubmit: {
     minHeight: 48,
     backgroundColor: ThemeColors.canopy,
@@ -108,10 +89,23 @@ export const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 3,
   },
+  feedReport_innerButtonSubmit_disabled: {
+    opacity: 0.45,
+  },
   feedReport_innerButtonSubmitText: {
     color: '#ffffff',
     fontSize: 15,
     fontWeight: '700',
+  },
+  feedReport_innerNotice: {
+    fontSize: 13,
+    color: ThemeColors.inkSoft,
+    marginBottom: 12,
+  },
+  feedReport_innerError: {
+    fontSize: 13,
+    color: ThemeColors.hazard,
+    marginBottom: 12,
   },
 });
 /* End Section Feed Report */
