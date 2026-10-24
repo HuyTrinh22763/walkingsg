@@ -231,9 +231,6 @@ export function AppProvider({ children }: { children?: ReactNode }): ReactElemen
     setUser((prev: UserPreferences) =>
       toUserPreferences(profile, { ...prev, email: res.user_email })
     );
-    locationState.setupInitialGpsLocation().catch((err) => {
-      console.warn('GPS setup error on login:', err);
-    });
     return res;
   };
 
