@@ -1,4 +1,4 @@
-import React, { useRef, useCallback, useEffect } from 'react';
+import React, { useRef, useCallback, useEffect, useMemo } from 'react';
 import { Platform, View } from 'react-native';
 import { oneMapStyles, iframeStyle } from './OneMapView.styles';
 
@@ -151,18 +151,10 @@ function buildLeafletHtml(props: OneMapViewProps): string {
     ).addTo(map);
     ` : ''}
 
-    // --- Route Polyline ---
+    var markers = {};
+    var routeLayer = null;
     var routeCoords = ${routeJson};
-    if (routeCoords.length > 1) {
-      L.polyline(routeCoords, {
-        color: '#1f6f43',
-        weight: 6,
-        opacity: 0.9,
-        lineCap: 'round',
-        lineJoin: 'round',
-        dashArray: null,
-      }).addTo(map);
-    }
+    var pins = ${pinsJson};
 
     // --- Custom Pin Factory ---
     function createUserIcon() {
@@ -191,51 +183,6 @@ function buildLeafletHtml(props: OneMapViewProps): string {
       });
     }
 
-    // --- Render Pins ---
-    var pins = ${pinsJson};
-    pins.forEach(function(pin) {
-      var icon;
-      if (pin.type === 'user')        icon = createUserIcon();
-      else if (pin.type === 'origin') icon = createOriginIcon();
-      else if (pin.type === 'destination') icon = createDestIcon();
-      else icon = createHazardIcon(pin.type);
-
-      var marker = L.marker([pin.position.lat, pin.position.lng], { icon: icon });
-      if (pin.label || pin.detail) {
-        marker.bindPopup(
-          '<b>' + (pin.label || '') + '</b>' +
-          (pin.detail ? '<br/><span style="font-size:12px;color:#57503f">' + pin.detail + '</span>' : '')
-        );
-      }
-      marker.on('click', function() {
-        postToRN({ type: 'onMarkerPress', id: pin.id });
-      });
-      marker.addTo(map);
-    });
-
-    // --- Map click event ---
-    map.on('click', function(e) {
-      postToRN({ type: 'onMapPress', lat: e.latlng.lat, lng: e.latlng.lng });
-    });
-
-    // --- Two-way Bridge: RN → Leaflet ---
-    function handleMessage(event) {
-      try {
-        var data = JSON.parse(event.data);
-        if (data.type === 'zoomIn')  map.zoomIn();
-        if (data.type === 'zoomOut') map.zoomOut();
-        if (data.type === 'setCenter') map.flyTo([data.lat, data.lng], data.zoom || map.getZoom());
-        if (data.type === 'drawRoute' && data.coordinates && data.coordinates.length > 1) {
-          L.polyline(data.coordinates, { color: '#1f6f43', weight: 6, lineCap: 'round' }).addTo(map);
-        }
-      } catch(e) {}
-    }
-
-    // Listen for messages from both WebView and iframe parent
-    window.addEventListener('message', handleMessage);
-    document.addEventListener('message', handleMessage);
-
-    // --- Two-way Bridge: Leaflet → RN ---
     function postToRN(payload) {
       try {
         var msg = JSON.stringify(payload);
@@ -244,8 +191,89 @@ function buildLeafletHtml(props: OneMapViewProps): string {
         } else {
           window.parent.postMessage(msg, '*');
         }
-      } catch(e) {}
+      } catch (e) {}
     }
+
+    function iconFor(pin) {
+      if (pin.type === 'user') return createUserIcon();
+      if (pin.type === 'origin') return createOriginIcon();
+      if (pin.type === 'destination') return createDestIcon();
+      return createHazardIcon(pin.type);
+    }
+
+    function popupHtml(pin) {
+      if (!pin.label && !pin.detail) return '';
+      return '<b>' + (pin.label || '') + '</b>' +
+        (pin.detail ? '<br/><span style="font-size:12px;color:#57503f">' + pin.detail + '</span>' : '');
+    }
+
+    function renderPins(nextPins) {
+      var seen = {};
+      nextPins.forEach(function (pin) {
+        seen[pin.id] = true;
+        var html = popupHtml(pin);
+        var marker = markers[pin.id];
+        if (marker) {
+          marker.setLatLng([pin.position.lat, pin.position.lng]);
+          if (html) {
+            if (marker.getPopup()) marker.setPopupContent(html);
+            else marker.bindPopup(html);
+          }
+          return;
+        }
+        marker = L.marker([pin.position.lat, pin.position.lng], { icon: iconFor(pin) });
+        if (html) marker.bindPopup(html);
+        marker.on('click', function () {
+          postToRN({ type: 'onMarkerPress', id: pin.id });
+        });
+        marker.addTo(map);
+        markers[pin.id] = marker;
+      });
+      Object.keys(markers).forEach(function (id) {
+        if (!seen[id]) {
+          map.removeLayer(markers[id]);
+          delete markers[id];
+        }
+      });
+    }
+
+    function setRoute(coordinates) {
+      if (routeLayer) {
+        map.removeLayer(routeLayer);
+        routeLayer = null;
+      }
+      if (!coordinates || coordinates.length < 2) return;
+      routeLayer = L.polyline(coordinates, {
+        color: '#1f6f43',
+        weight: 6,
+        opacity: 0.9,
+        lineCap: 'round',
+        lineJoin: 'round',
+      }).addTo(map);
+    }
+
+    renderPins(pins);
+    setRoute(routeCoords);
+
+    map.on('click', function (e) {
+      postToRN({ type: 'onMapPress', lat: e.latlng.lat, lng: e.latlng.lng });
+    });
+
+    function handleMessage(event) {
+      try {
+        var data = JSON.parse(event.data);
+        if (data.type === 'zoomIn') map.zoomIn();
+        if (data.type === 'zoomOut') map.zoomOut();
+        if (data.type === 'setCenter') map.flyTo([data.lat, data.lng], data.zoom || map.getZoom());
+        if (data.type === 'panTo') map.panTo([data.lat, data.lng], { animate: true });
+        if (data.type === 'setPins' && Array.isArray(data.pins)) renderPins(data.pins);
+        if (data.type === 'setRoute' || data.type === 'drawRoute') setRoute(data.coordinates || []);
+      } catch (e) {}
+    }
+
+    window.addEventListener('message', handleMessage);
+    document.addEventListener('message', handleMessage);
+    postToRN({ type: 'ready' });
   </script>
 </body>
 </html>`;
@@ -254,39 +282,104 @@ function buildLeafletHtml(props: OneMapViewProps): string {
 
 // Section OneMapView Component
 export default function OneMapView(props: OneMapViewProps) {
-  const html = buildLeafletHtml(props);
+  const htmlRef = useRef<string | null>(null);
+  if (htmlRef.current === null) htmlRef.current = buildLeafletHtml(props);
+  const html = htmlRef.current;
 
-  // --- Native path: react-native-webview ---
+  const webViewRef = useRef<any>(null);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const isReadyRef = useRef(false);
+  const propsRef = useRef(props);
+  propsRef.current = props;
+
+  const blobUrl = useMemo(() => {
+    if (Platform.OS !== 'web') return '';
+    return URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+  }, [html]);
+
+  useEffect(() => {
+    if (!blobUrl) return;
+    return () => URL.revokeObjectURL(blobUrl);
+  }, [blobUrl]);
+
+  const postToMap = useCallback((msg: object) => {
+    const payload = JSON.stringify(msg);
+    if (Platform.OS === 'web') {
+      iframeRef.current?.contentWindow?.postMessage(payload, '*');
+      return;
+    }
+    webViewRef.current?.postMessage(payload);
+  }, []);
+
+  const flushMap = useCallback(() => {
+    const current = propsRef.current;
+    postToMap({ type: 'setPins', pins: current.pins ?? [] });
+    postToMap({ type: 'setRoute', coordinates: current.routeCoordinates ?? [] });
+    if (current.center) {
+      postToMap({ type: 'panTo', lat: current.center.lat, lng: current.center.lng });
+    }
+  }, [postToMap]);
+
+  const applyMapMessage = useCallback((data: { type?: string; id?: string; lat?: number; lng?: number }) => {
+    if (data.type === 'ready') {
+      isReadyRef.current = true;
+      flushMap();
+      return;
+    }
+    if (data.type === 'onMarkerPress' && data.id) propsRef.current.onMarkerPress?.(data.id);
+    if (data.type === 'onMapPress' && data.lat != null && data.lng != null) {
+      propsRef.current.onMapPress?.({ lat: data.lat, lng: data.lng });
+    }
+  }, [flushMap]);
+
+  useEffect(() => {
+    if (!props.mapRef) return;
+    props.mapRef.current = {
+      zoomIn: () => postToMap({ type: 'zoomIn' }),
+      zoomOut: () => postToMap({ type: 'zoomOut' }),
+      setCenter: (c) => postToMap({ type: 'setCenter', lat: c.lat, lng: c.lng }),
+    };
+  }, [postToMap, props.mapRef]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const handleMessage = (event: MessageEvent) => {
+      try {
+        const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+        applyMapMessage(data);
+      } catch (_) {}
+    };
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [applyMapMessage]);
+
+  const pinsKey = JSON.stringify(props.pins ?? []);
+  const routeKey = JSON.stringify(props.routeCoordinates ?? []);
+
+  useEffect(() => {
+    if (!isReadyRef.current) return;
+    postToMap({ type: 'setPins', pins: propsRef.current.pins ?? [] });
+  }, [pinsKey, postToMap]);
+
+  useEffect(() => {
+    if (!isReadyRef.current) return;
+    postToMap({ type: 'setRoute', coordinates: propsRef.current.routeCoordinates ?? [] });
+  }, [routeKey, postToMap]);
+
+  useEffect(() => {
+    if (!isReadyRef.current || !props.center) return;
+    postToMap({ type: 'panTo', lat: props.center.lat, lng: props.center.lng });
+  }, [props.center?.lat, props.center?.lng, postToMap]);
+
+  const handleNativeMessage = useCallback((event: { nativeEvent: { data: string } }) => {
+    try {
+      applyMapMessage(JSON.parse(event.nativeEvent.data));
+    } catch (_) {}
+  }, [applyMapMessage]);
+
   if (Platform.OS !== 'web') {
-    // Lazy import to avoid crashing on web bundler
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const WebView = require('react-native-webview').default;
-
-    const webViewRef = useRef<any>(null);
-
-    const postToMap = useCallback((msg: object) => {
-      webViewRef.current?.postMessage(JSON.stringify(msg));
-    }, []);
-
-    // Wire up imperative handle
-    useEffect(() => {
-      if (props.mapRef) {
-        props.mapRef.current = {
-          zoomIn:    () => postToMap({ type: 'zoomIn' }),
-          zoomOut:   () => postToMap({ type: 'zoomOut' }),
-          setCenter: (c) => postToMap({ type: 'setCenter', lat: c.lat, lng: c.lng }),
-        };
-      }
-    }, [postToMap, props.mapRef]);
-
-    const handleMessage = useCallback((event: any) => {
-      try {
-        const data = JSON.parse(event.nativeEvent.data);
-        if (data.type === 'onMarkerPress') props.onMarkerPress?.(data.id);
-        if (data.type === 'onMapPress')    props.onMapPress?.({ lat: data.lat, lng: data.lng });
-      } catch (_) {}
-    }, [props.onMarkerPress, props.onMapPress]);
-
     return (
       <View style={oneMapStyles.mapContainer}>
         <WebView
@@ -296,45 +389,13 @@ export default function OneMapView(props: OneMapViewProps) {
           originWhitelist={['*']}
           javaScriptEnabled
           domStorageEnabled
-          onMessage={handleMessage}
+          onMessage={handleNativeMessage}
           scrollEnabled={false}
           allowsInlineMediaPlayback
         />
       </View>
     );
   }
-
-  // --- Web path: iframe (prevents react-native-webview from crashing the web bundler) ---
-  const iframeRef = useRef<HTMLIFrameElement | null>(null);
-
-  const postToMap = useCallback((msg: object) => {
-    iframeRef.current?.contentWindow?.postMessage(JSON.stringify(msg), '*');
-  }, []);
-
-  useEffect(() => {
-    if (props.mapRef) {
-      props.mapRef.current = {
-        zoomIn:    () => postToMap({ type: 'zoomIn' }),
-        zoomOut:   () => postToMap({ type: 'zoomOut' }),
-        setCenter: (c) => postToMap({ type: 'setCenter', lat: c.lat, lng: c.lng }),
-      };
-    }
-  }, [postToMap, props.mapRef]);
-
-  useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.type === 'onMarkerPress') props.onMarkerPress?.(data.id);
-        if (data.type === 'onMapPress')    props.onMapPress?.({ lat: data.lat, lng: data.lng });
-      } catch (_) {}
-    };
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
-  }, [props.onMarkerPress, props.onMapPress]);
-
-  const blob = new Blob([html], { type: 'text/html' });
-  const blobUrl = URL.createObjectURL(blob);
 
   return (
     <View style={oneMapStyles.mapContainer}>
