@@ -1,99 +1,129 @@
-import React from 'react';
+import React, { useCallback, useState } from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import OneMapView, { MapPin, LatLng } from '../../components/OneMapView';
 import { HazardAlertIcon, LiftIcon, PondingIcon } from '../../components/SvgIcons';
+import { useApp } from '../../context/AppContext';
+import { hazardService } from '../../services/hazardService';
+import { ThemeColors } from '../../constants/theme';
+import {
+  formatHazardIcon,
+  formatHazardTitle,
+  type HazardIconName,
+  type HazardOut,
+} from '../../types/hazard';
 import { styles } from './NavHazardsScreen.styles';
-
-// Section Nav Hazards Mock Data
-const MOCK_HAZARDS_CENTER: LatLng = { lat: 1.3005, lng: 103.8420 };
-
-const MOCK_HAZARD_ROUTE: LatLng[] = [
-  { lat: 1.2985, lng: 103.8460 },
-  { lat: 1.2996, lng: 103.8438 },
-  { lat: 1.3008, lng: 103.8410 },
-  { lat: 1.3012, lng: 103.8395 },
-  { lat: 1.3016, lng: 103.8365 },
-];
-
-const MOCK_HAZARD_PINS: MapPin[] = [
-  {
-    id: 'hazard-ponding',
-    position: { lat: 1.2996, lng: 103.8438 },
-    type: 'hazard',
-    label: 'Ponding',
-    detail: 'Somerset link path — 400 m ahead',
-  },
-  {
-    id: 'hazard-lift',
-    position: { lat: 1.3008, lng: 103.8410 },
-    type: 'hazard',
-    label: 'Lift Out of Service',
-    detail: 'Orchard MRT Exit B — 750 m ahead',
-  },
-  {
-    id: 'hazard-crowd',
-    position: { lat: 1.3016, lng: 103.8365 },
-    type: 'caution',
-    label: 'Crowd Surge',
-    detail: 'Orchard Central entrance — 1.1 km ahead',
-  },
-];
-// End Section Nav Hazards Mock Data
 
 export default function NavHazardsScreen({ navigation }: any) {
   // Section Nav Hazards Logic
+  const { origin, selectedRouteDetail } = useApp();
+  const [hazards, setHazards] = useState<HazardOut[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!origin) {
+        setHazards([]);
+        setLoading(false);
+        setErrorMessage(null);
+        return;
+      }
+
+      let active = true;
+      setLoading(true);
+      setErrorMessage(null);
+      hazardService
+        .getNearbyHazards(origin.latitude, origin.longitude)
+        .then(result => {
+          if (active) setHazards(result);
+        })
+        .catch(error => {
+          if (!active) return;
+          setHazards([]);
+          setErrorMessage(error instanceof Error ? error.message : 'Could not load hazards.');
+        })
+        .finally(() => {
+          if (active) setLoading(false);
+        });
+
+      return () => {
+        active = false;
+      };
+    }, [origin])
+  );
+
   const handleReroute = () => {
     navigation.goBack();
   };
+
+  const renderIcon = (glyph: HazardIconName) => {
+    switch (glyph) {
+      case 'lift': return <LiftIcon size={18} />;
+      case 'water': return <PondingIcon size={18} />;
+      default: return <HazardAlertIcon size={18} color={ThemeColors.hazard} />;
+    }
+  };
+
+  const center: LatLng | undefined = origin
+    ? { lat: origin.latitude, lng: origin.longitude }
+    : undefined;
+  const routeCoordinates: LatLng[] =
+    selectedRouteDetail?.polyline.map(([lat, lng]) => ({ lat, lng })) ?? [];
+  const pins: MapPin[] = hazards.map(hazard => ({
+    id: hazard.hazard_id,
+    position: { lat: hazard.latitude, lng: hazard.longitude },
+    type: 'hazard',
+    label: formatHazardTitle(hazard.hazard_type),
+  }));
+  const bannerText = !origin
+    ? 'Location required.'
+    : errorMessage
+      ? errorMessage
+      : loading
+        ? 'Loading hazards...'
+        : hazards.length === 1
+          ? '1 alert nearby'
+          : `${hazards.length} alerts nearby`;
   // End Section Nav Hazards Logic
 
   return (
     <SafeAreaView style={styles.screenContainer}>
       {/* Section Nav Hazards */}
       <View style={styles.navHazards_innerContainer}>
-        {/* OneMap with real hazard pins */}
         <OneMapView
-          center={MOCK_HAZARDS_CENTER}
+          center={center}
           zoom={15}
-          routeCoordinates={MOCK_HAZARD_ROUTE}
-          pins={MOCK_HAZARD_PINS}
+          routeCoordinates={routeCoordinates}
+          pins={pins}
         />
 
-        {/* Top Alert Banner */}
         <View style={styles.navHazards_innerTopAlert}>
           <HazardAlertIcon size={20} />
-          <Text style={styles.navHazards_innerTopAlertText}>3 alerts on your route ahead</Text>
+          <Text style={styles.navHazards_innerTopAlertText}>{bannerText}</Text>
         </View>
 
-        {/* Bottom Sheet List */}
         <View style={styles.navHazards_innerBottomSheet}>
-          <Text style={styles.navHazards_innerSheetTitle}>Alerts ahead</Text>
+          <Text style={styles.navHazards_innerSheetTitle}>Alerts nearby</Text>
 
           <View style={styles.navHazards_innerAlertsList}>
-            <View style={styles.navHazards_innerAlertItem}>
-              <View style={styles.navHazards_innerItemLeft}>
-                <PondingIcon size={18} />
-                <Text style={styles.navHazards_innerItemText}>Ponding — Somerset link path</Text>
-              </View>
-              <Text style={styles.navHazards_innerItemDist}>400 m</Text>
-            </View>
-
-            <View style={styles.navHazards_innerAlertItem}>
-              <View style={styles.navHazards_innerItemLeft}>
-                <LiftIcon size={18} />
-                <Text style={styles.navHazards_innerItemText}>Lift out of service — Orchard MRT</Text>
-              </View>
-              <Text style={styles.navHazards_innerItemDist}>750 m</Text>
-            </View>
-
-            <View style={[styles.navHazards_innerAlertItem, styles.navHazards_innerAlertItem_last]}>
-              <View style={styles.navHazards_innerItemLeft}>
-                <HazardAlertIcon size={18} color="#855111" />
-                <Text style={styles.navHazards_innerItemText}>Crowd surge — Orchard Central</Text>
-              </View>
-              <Text style={styles.navHazards_innerItemDist}>1.1 km</Text>
-            </View>
+            {hazards.map((hazard, idx) => {
+              const isLast = idx === hazards.length - 1;
+              return (
+                <View
+                  key={hazard.hazard_id}
+                  style={[styles.navHazards_innerAlertItem, isLast && styles.navHazards_innerAlertItem_last]}
+                >
+                  <View style={styles.navHazards_innerItemLeft}>
+                    {renderIcon(formatHazardIcon(hazard.hazard_type))}
+                    <Text style={styles.navHazards_innerItemText}>
+                      {formatHazardTitle(hazard.hazard_type)}
+                    </Text>
+                  </View>
+                </View>
+              );
+            })}
           </View>
 
           <TouchableOpacity
