@@ -14,7 +14,20 @@
       }
     },
     "plugins": [
-      "expo-asset"
-    ]
+      "expo-asset",
+      "expo-status-bar"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "4dbc626f-ffbd-4a1a-b2d3-7bf57f692b05"
+      }
+    },
+    "owner": "huajaap",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/4dbc626f-ffbd-4a1a-b2d3-7bf57f692b05"
+    }
   }
 }
