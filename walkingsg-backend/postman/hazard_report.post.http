@@ -1,0 +1,11 @@
+### Report Hazard
+POST http://localhost:3052/v1/api/hazard/report
+Content-Type: application/json
+x-client-id: {{client_id}}
+authorization: {{access_token}}
+
+{
+  "hazard_type": "flooding",
+  "latitude": 1.3521,
+  "longitude": 103.8198
+}
