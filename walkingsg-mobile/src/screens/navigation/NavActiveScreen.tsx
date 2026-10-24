@@ -36,6 +36,8 @@ export default function NavActiveScreen({ navigation }: any) {
 
   const [currentCoord, setCurrentCoord] = useState<LatLng>(initialCoord);
   const trackRef = useRef(trackNavPosition);
+  const inFlightRef = useRef(false);
+  const pendingRef = useRef<{ coord: [number, number]; speedKmh: number } | null>(null);
 
   useEffect(() => {
     trackRef.current = trackNavPosition;
@@ -57,6 +59,26 @@ export default function NavActiveScreen({ navigation }: any) {
     let subscription: Location.LocationSubscription | null = null;
     let isCancelled = false;
 
+    const send = (coord: [number, number], speedKmh: number) => {
+      if (isCancelled) return;
+      if (inFlightRef.current) {
+        pendingRef.current = { coord, speedKmh };
+        return;
+      }
+      inFlightRef.current = true;
+      pendingRef.current = null;
+      trackRef.current(coord, speedKmh)
+        .catch((err) => {
+          console.warn('Real GPS tracking update error:', err);
+        })
+        .finally(() => {
+          inFlightRef.current = false;
+          const pending = pendingRef.current;
+          pendingRef.current = null;
+          if (pending && !isCancelled) send(pending.coord, pending.speedKmh);
+        });
+    };
+
     async function startWatching() {
       try {
         subscription = await Location.watchPositionAsync(
@@ -75,9 +97,7 @@ export default function NavActiveScreen({ navigation }: any) {
                 : 0;
 
             setCurrentCoord({ lat, lng });
-            trackRef.current([lat, lng], speedKmh).catch((err) => {
-              console.warn('Real GPS tracking update error:', err);
-            });
+            send([lat, lng], speedKmh);
           }
         );
       } catch (error) {
@@ -89,6 +109,8 @@ export default function NavActiveScreen({ navigation }: any) {
 
     return () => {
       isCancelled = true;
+      inFlightRef.current = false;
+      pendingRef.current = null;
       if (subscription) {
         subscription.remove();
       }
