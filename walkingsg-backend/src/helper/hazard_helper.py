@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from typing import Any
 
 
@@ -26,4 +27,8 @@ def format_hazard_response(value: Any) -> dict[str, Any]:
         data["longitude"], data["latitude"] = coordinates
     if data.get("hazard_id") is not None:
         data["hazard_id"] = str(data["hazard_id"])
+    ts = data.get("report_timestamp")
+    if isinstance(ts, datetime) and ts.tzinfo is None:
+        data["report_timestamp"] = ts.replace(tzinfo=UTC)
     return data
+
