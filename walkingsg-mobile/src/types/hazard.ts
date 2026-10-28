@@ -44,7 +44,17 @@ export const formatHazardTimeAgo = (
   reportTimestamp: string,
   now: Date = new Date()
 ): string => {
-  const elapsedMs = now.getTime() - new Date(reportTimestamp).getTime();
+  if (!reportTimestamp) return 'Just now';
+
+  // If timestamp has no timezone offset (e.g. "2026-10-27T05:50:14"),
+  // JavaScript Date parses it as local time instead of UTC.
+  // Appending 'Z' ensures it is correctly parsed in UTC.
+  const hasTimezone =
+    reportTimestamp.endsWith('Z') ||
+    /[+-]\d{2}(?::?\d{2})?$/.test(reportTimestamp);
+  const normalized = hasTimezone ? reportTimestamp : `${reportTimestamp}Z`;
+
+  const elapsedMs = now.getTime() - new Date(normalized).getTime();
   if (Number.isNaN(elapsedMs) || elapsedMs < 0) return 'Just now';
 
   const minutes = Math.floor(elapsedMs / 60000);
@@ -57,3 +67,4 @@ export const formatHazardTimeAgo = (
 
   return `${Math.floor(hours / 24)} days ago`;
 };
+
