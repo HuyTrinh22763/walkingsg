@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, RefreshControl } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LiftIcon, PondingIcon, HazardAlertIcon } from '../../components/SvgIcons';
@@ -20,39 +20,48 @@ export default function FeedListScreen({ navigation }: any) {
   const { origin } = useApp();
   const [hazards, setHazards] = useState<HazardOut[]>([]);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const fetchHazards = useCallback(async (isPull = false, silent = false) => {
+    if (!origin) {
+      setHazards([]);
+      setLoading(false);
+      setErrorMessage(null);
+      return;
+    }
+
+    if (isPull) {
+      setRefreshing(true);
+    } else if (!silent) {
+      setLoading(true);
+    }
+    setErrorMessage(null);
+
+    try {
+      const result = await hazardService.getNearbyHazards(origin.latitude, origin.longitude);
+      setHazards(result);
+    } catch (error) {
+      if (!silent) {
+        setHazards([]);
+        setErrorMessage(error instanceof Error ? error.message : 'Could not load hazards.');
+      }
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [origin]);
 
   useFocusEffect(
     useCallback(() => {
-      if (!origin) {
-        setHazards([]);
-        setLoading(false);
-        setErrorMessage(null);
-        return;
-      }
-
-      let active = true;
-      setLoading(true);
-      setErrorMessage(null);
-      hazardService
-        .getNearbyHazards(origin.latitude, origin.longitude)
-        .then(result => {
-          if (active) setHazards(result);
-        })
-        .catch(error => {
-          if (!active) return;
-          setHazards([]);
-          setErrorMessage(error instanceof Error ? error.message : 'Could not load hazards.');
-        })
-        .finally(() => {
-          if (active) setLoading(false);
-        });
-
-      return () => {
-        active = false;
-      };
-    }, [origin])
+      fetchHazards(false, false);
+      const interval = setInterval(() => {
+        fetchHazards(false, true);
+      }, 15000);
+      return () => clearInterval(interval);
+    }, [fetchHazards])
   );
+
 
   const renderIcon = (glyph: HazardIconName) => {
     switch (glyph) {
@@ -75,7 +84,19 @@ export default function FeedListScreen({ navigation }: any) {
 
   return (
     <SafeAreaView style={styles.screenContainer}>
-      <ScrollView contentContainerStyle={styles.feedList_innerWrap}>
+      <ScrollView
+        contentContainerStyle={styles.feedList_innerWrap}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => fetchHazards(true)}
+            colors={[ThemeColors.canopy]}
+            tintColor={ThemeColors.canopy}
+          />
+        }
+      >
+
+
         {/* Section Feed List */}
         <View style={styles.feedList_innerHeader}>
           <Text style={styles.feedList_innerTitle}>Local Feed</Text>

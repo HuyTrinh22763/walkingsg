@@ -32,27 +32,40 @@ export default function NavHazardsScreen({ navigation }: any) {
       }
 
       let active = true;
-      setLoading(true);
-      setErrorMessage(null);
-      hazardService
-        .getNearbyHazards(origin.latitude, origin.longitude)
-        .then(result => {
-          if (active) setHazards(result);
-        })
-        .catch(error => {
-          if (!active) return;
-          setHazards([]);
-          setErrorMessage(error instanceof Error ? error.message : 'Could not load hazards.');
-        })
-        .finally(() => {
-          if (active) setLoading(false);
-        });
+      const loadHazards = (silent = false) => {
+        if (!silent) {
+          setLoading(true);
+          setErrorMessage(null);
+        }
+        hazardService
+          .getNearbyHazards(origin.latitude, origin.longitude)
+          .then(result => {
+            if (active) setHazards(result);
+          })
+          .catch(error => {
+            if (!active) return;
+            if (!silent) {
+              setHazards([]);
+              setErrorMessage(error instanceof Error ? error.message : 'Could not load hazards.');
+            }
+          })
+          .finally(() => {
+            if (active && !silent) setLoading(false);
+          });
+      };
+
+      loadHazards(false);
+      const interval = setInterval(() => {
+        loadHazards(true);
+      }, 15000);
 
       return () => {
         active = false;
+        clearInterval(interval);
       };
     }, [origin])
   );
+
 
   const handleReroute = () => {
     navigation.goBack();
