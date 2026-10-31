@@ -15,6 +15,7 @@ export interface RouteVariantSummary {
   match_score: number;
   sheltered_percentage: number;
   stair_count: number;
+  hazard_count?: number;
   is_starred: boolean;
 }
 
@@ -51,6 +52,7 @@ export const toRouteCard = (summary: RouteVariantSummary): RouteModel => ({
   stairs: summary.stair_count,
   crowd: '',
   details: buildRouteDetails(summary),
+  hazard_count: summary.hazard_count ?? 0,
 });
 
 export const toRouteCards = (result: RouteSearchOut): RouteModel[] => [
