@@ -13,6 +13,7 @@ from src.schemas.navigation_schema import (
     NavStartOut,
     NavTrackOut,
 )
+from src.schemas.route_schema import RouteDetailOut
 from src.services.navigation_service import NavigationService
 
 
@@ -127,3 +128,39 @@ async def test_end_navigation_route_success(mock_auth, mock_nav_service):
         assert data["message"] == "End navigation session success!"
         assert data["metadata"]["session_id"] == session_id
         assert data["metadata"]["status"] == "CANCELLED"
+
+
+@pytest.mark.asyncio
+async def test_reroute_route_success(mock_auth, mock_nav_service):
+    session_id = str(PydanticObjectId())
+    route_id = str(PydanticObjectId())
+    mock_nav_service.reroute.return_value = RouteDetailOut(
+        route_id=route_id,
+        route_type="Direct",
+        total_distance=450.0,
+        estimated_time=360,
+        match_score=95.0,
+        sheltered_percentage=60.0,
+        stair_count=0,
+        hazard_count=0,
+        is_starred=True,
+        polyline=[[1.30, 103.85], [1.31, 103.86]],
+        steps=["Step 1"],
+    )
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        res = await client.post(
+            "/v1/api/navigation/reroute",
+            json={
+                "session_id": session_id,
+                "current_coord": [1.30, 103.85],
+            },
+        )
+
+        assert res.status_code == 200
+        data = res.json()
+        assert data["status"] == 200
+        assert data["message"] == "Reroute navigation session success!"
+        assert data["metadata"]["route_id"] == route_id
+        assert data["metadata"]["hazard_count"] == 0

@@ -10,11 +10,13 @@ from src.model.repository.route_repo import RouteRepository
 from src.schemas.navigation_schema import (
     NavEndOut,
     NavEndRequest,
+    NavRerouteRequest,
     NavStartOut,
     NavStartRequest,
     NavTrackOut,
     NavTrackRequest,
 )
+from src.schemas.route_schema import RouteDetailOut
 from src.services.navigation_service import NavigationService
 from src.services.route_service import RouteService
 
@@ -62,3 +64,11 @@ async def end_navigation(
 ) -> SuccessResponse[NavEndOut]:
     result = await service.end_navigation(payload=payload)
     return ok(result, message="End navigation session success!")
+
+
+async def reroute(
+    payload: NavRerouteRequest,
+    service: NavigationServiceDep,
+) -> SuccessResponse[RouteDetailOut]:
+    result = await service.reroute(payload=payload)
+    return ok(result, message="Reroute navigation session success!")

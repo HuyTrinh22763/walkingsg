@@ -15,10 +15,15 @@ from src.model.repository.route_repo import RouteRepository
 from src.model.route_model import RouteModel, RouteType
 from src.schemas.navigation_schema import (
     NavEndRequest,
+    NavRerouteRequest,
     NavStartRequest,
     NavTrackRequest,
 )
-from src.schemas.route_schema import RouteSearchOut, RouteVariantSummary
+from src.schemas.route_schema import (
+    RouteDetailOut,
+    RouteSearchOut,
+    RouteVariantSummary,
+)
 from src.services.navigation_service import NavigationService
 from src.services.route_service import RouteService
 from src.utils.index import utc_now
@@ -346,4 +351,62 @@ async def test_end_navigation_manual_cancel_and_complete(mock_dependencies) -> N
     assert out_cancel.status == "CANCELLED"
     session_repo.complete_session.assert_awaited_once_with(
         session=session, status=NavigationStatus.CANCELLED
+    )
+
+
+@pytest.mark.asyncio
+async def test_reroute_navigation_success(mock_dependencies) -> None:
+    service, session_repo, route_repo, _, route_service = mock_dependencies
+    user_id = PydanticObjectId()
+    session_id = PydanticObjectId()
+    old_route_id = PydanticObjectId()
+    new_route_id = PydanticObjectId()
+
+    session = NavigationSessionModel.model_construct(
+        id=session_id,
+        user_id=user_id,
+        route_id=old_route_id,
+        current_location=(1.3500, 103.6800),
+        session_status=NavigationStatus.ACTIVE,
+    )
+    old_route = make_mock_route(old_route_id, user_id)
+    session_repo.find_by_id.return_value = session
+    route_repo.find_by_id.return_value = old_route
+
+    mock_summary = RouteVariantSummary(
+        route_id=str(new_route_id),
+        route_type="Direct",
+        total_distance=500.0,
+        estimated_time=400,
+        match_score=90.0,
+        sheltered_percentage=70.0,
+        stair_count=0,
+        hazard_count=0,
+        is_starred=True,
+    )
+    route_service.generate_routes.return_value = RouteSearchOut(
+        starred_route=mock_summary,
+        alternative_routes=[],
+    )
+    route_service.find_route.return_value = RouteDetailOut(
+        **mock_summary.model_dump(),
+        polyline=[[1.3500, 103.6820], [1.3500, 103.6900]],
+        steps=["Step 1"],
+    )
+
+    req = NavRerouteRequest(
+        session_id=str(session_id),
+        current_coord=(1.3500, 103.6820),
+    )
+    out = await service.reroute(payload=req, user_id=user_id)
+
+    assert out.route_id == str(new_route_id)
+    assert out.total_distance == 500.0
+    session_repo.update_route.assert_awaited_once_with(
+        session=session,
+        route_id=new_route_id,
+    )
+    session_repo.update_location.assert_awaited_once_with(
+        session=session,
+        current_location=(1.3500, 103.6820),
     )

@@ -20,6 +20,9 @@ private_router.post("/track", status_code=HTTPStatus.OK)(
 private_router.post("/end", status_code=HTTPStatus.OK)(
     controller.end_navigation
 )
+private_router.post("/reroute", status_code=HTTPStatus.OK)(
+    controller.reroute
+)
 
 router = APIRouter(tags=["navigation"])
 router.include_router(private_router)
