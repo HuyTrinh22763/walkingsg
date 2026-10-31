@@ -1,9 +1,12 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, View, Text, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import OneMapView, { OneMapViewHandle, MapPin, LatLng } from '../../components/OneMapView';
 import { RoutesTabIcon } from '../../components/SvgIcons';
 import { useApp } from '../../context/AppContext';
+import { hazardService } from '../../services/hazardService';
+import { formatHazardTitle, type HazardOut } from '../../types/hazard';
+import { findHazardsOnRoute } from '../../utils/routeUtils';
 import { styles } from './MapSearchScreen.styles';
 
 const SINGAPORE_CENTER: LatLng = { lat: 1.3521, lng: 103.8198 };
@@ -22,15 +25,31 @@ export default function MapSearchScreen({ navigation }: any) {
     setupInitialGpsLocation,
   } = useApp();
 
+  const [nearbyHazards, setNearbyHazards] = useState<HazardOut[]>([]);
+
+  useEffect(() => {
+    if (!origin && !destination) {
+      setNearbyHazards([]);
+      return;
+    }
+    const targetLat = origin ? origin.latitude : destination!.latitude;
+    const targetLng = origin ? origin.longitude : destination!.longitude;
+    hazardService
+      .getNearbyHazards(targetLat, targetLng)
+      .then(setNearbyHazards)
+      .catch(() => setNearbyHazards([]));
+  }, [origin, destination]);
+
   useEffect(() => {
     if (!origin && gpsStatus === 'granted') {
       setupInitialGpsLocation().catch(() => {});
     }
   }, [origin, gpsStatus, setupInitialGpsLocation]);
 
+  const polylineCoords = selectedRouteDetail?.polyline ?? [];
   const routeCoordinates: LatLng[] =
-    selectedRouteDetail && selectedRouteDetail.polyline.length > 0
-      ? selectedRouteDetail.polyline.map(([lat, lng]) => ({ lat, lng }))
+    polylineCoords.length > 0
+      ? polylineCoords.map(([lat, lng]) => ({ lat, lng }))
       : [];
 
   const pins: MapPin[] = [];
@@ -52,6 +71,19 @@ export default function MapSearchScreen({ navigation }: any) {
       detail: 'Destination',
     });
   }
+
+  const onRouteHazards = polylineCoords.length >= 2
+    ? findHazardsOnRoute(nearbyHazards, polylineCoords, 60)
+    : [];
+
+  onRouteHazards.forEach((h) => {
+    pins.push({
+      id: `hazard-${h.hazard_id}`,
+      position: { lat: h.latitude, lng: h.longitude },
+      type: 'hazard',
+      label: formatHazardTitle(h.hazard_type),
+    });
+  });
 
   const mapCenter: LatLng = origin
     ? { lat: origin.latitude, lng: origin.longitude }

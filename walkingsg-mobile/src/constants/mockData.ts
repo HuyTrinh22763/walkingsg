@@ -14,6 +14,7 @@ export interface RouteModel {
   stairs: number;
   crowd: string;
   details: string[];
+  hazard_count?: number;
 }
 
 export const INITIAL_ROUTES: RouteModel[] = [

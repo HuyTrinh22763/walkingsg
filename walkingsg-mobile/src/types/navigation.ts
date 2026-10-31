@@ -33,3 +33,8 @@ export interface NavEndResponse {
   session_id: string;
   status: 'ACTIVE' | 'COMPLETED' | 'CANCELLED';
 }
+
+export interface NavRerouteRequest {
+  session_id: string;
+  current_coord: [number, number];
+}

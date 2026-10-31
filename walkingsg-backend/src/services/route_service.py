@@ -1,6 +1,9 @@
+from datetime import timedelta
+import logging
 from beanie import PydanticObjectId
 
 from src.core.error_response import BadRequestError, NotFoundError
+from src.model.hazard_model import HazardModel, HazardType
 from src.model.map_segment_model import MapSegmentModel
 from src.model.profile_model import (
     HeatUvSensitivity,
@@ -8,6 +11,7 @@ from src.model.profile_model import (
     PreferredPace,
     ProfileModel,
 )
+from src.model.repository.hazard_repo import HazardRepository
 from src.model.repository.map_segment_repo import MapSegmentRepository
 from src.model.repository.profile_repo import ProfileRepository
 from src.model.repository.route_repo import RouteRepository
@@ -18,13 +22,19 @@ from src.schemas.route_schema import (
     RouteSearchRequest,
     RouteVariantSummary,
 )
+from src.services.adapters.ors_routing_adapter import OrsRoutingAdapter
+from src.services.adapters.pedestrian_routing_adapter import PedestrianRouteData
 from src.services.route_types import RouteFactory
 from src.utils.index import (
     clamp,
+    distance_to_polyline,
     haversine_distance,
     is_within_singapore,
     normalize_weights,
+    utc_now,
 )
+
+logger = logging.getLogger(__name__)
 
 STAIR_PENALTY = 10.0
 NEUTRAL_CONFIDENCE_SCORE = 50.0
@@ -46,16 +56,72 @@ ROUTE_TYPE_PRIORITY = {
 }
 
 
+def should_avoid_hazard(hazard: HazardModel, profile: ProfileModel) -> bool:
+    if hazard.hazard_type in (
+        HazardType.BLOCKED,
+        HazardType.FLOODING,
+        HazardType.UNWALKABLE,
+    ):
+        return True
+    if hazard.hazard_type in (HazardType.LIFT, HazardType.UNEVEN):
+        return profile.mobility_needs in (
+            MobilityNeeds.WHEELCHAIR,
+            MobilityNeeds.MOBILITY_AID,
+        )
+    return False
+
+
+def build_avoid_polygons(
+    hazards: list[HazardModel],
+    profile: ProfileModel,
+    origin_coord: tuple[float, float],
+    destination_coord: tuple[float, float],
+    buffer_meters: float = 25.0,
+) -> list[list[list[list[float]]]]:
+    avoid_polygons: list[list[list[list[float]]]] = []
+    delta_deg = buffer_meters / 111000.0
+
+    for h in hazards:
+        if not should_avoid_hazard(h, profile):
+            continue
+        h_lat = float(h.location.coordinates[1])
+        h_lng = float(h.location.coordinates[0])
+
+        # Skip doorstep hazards (< 35m from start or end) to avoid ORS routing errors
+        if (
+            haversine_distance((h_lat, h_lng), origin_coord) < 35.0
+            or haversine_distance((h_lat, h_lng), destination_coord) < 35.0
+        ):
+            continue
+
+        polygon = [
+            [
+                [round(h_lng - delta_deg, 6), round(h_lat - delta_deg, 6)],
+                [round(h_lng + delta_deg, 6), round(h_lat - delta_deg, 6)],
+                [round(h_lng + delta_deg, 6), round(h_lat + delta_deg, 6)],
+                [round(h_lng - delta_deg, 6), round(h_lat + delta_deg, 6)],
+                [round(h_lng - delta_deg, 6), round(h_lat - delta_deg, 6)],
+            ]
+        ]
+        avoid_polygons.append(polygon)
+
+    return avoid_polygons
+
+
 class RouteService:
     def __init__(
         self,
         map_segment_repo: MapSegmentRepository,
         route_repo: RouteRepository,
         profile_repo: ProfileRepository,
+        hazard_repo: HazardRepository | None = None,
+        routing_adapter: OrsRoutingAdapter | None = None,
     ) -> None:
         self._map_segment_repo = map_segment_repo
         self._route_repo = route_repo
         self._profile_repo = profile_repo
+        self._hazard_repo = hazard_repo
+        self._routing_adapter = routing_adapter or OrsRoutingAdapter()
 
     def calculate_match_score(
         self,
@@ -114,6 +180,7 @@ class RouteService:
         ranked = sorted(
             routes,
             key=lambda route: (
+                getattr(route, "hazard_count", 0),
                 -route.match_score,
                 route.estimated_time,
                 -route.sheltered_percentage,
@@ -152,6 +219,43 @@ class RouteService:
             segment.segment_id: segment for segment in candidates
         }
 
+        # Query active hazards within trip radius (last 72 hours)
+        active_hazards: list[HazardModel] = []
+        if self._hazard_repo is not None:
+            try:
+                mid_lat = (payload.origin_coord[0] + payload.destination_coord[0]) / 2.0
+                mid_lng = (payload.origin_coord[1] + payload.destination_coord[1]) / 2.0
+                dist_m = haversine_distance(payload.origin_coord, payload.destination_coord)
+                search_radius = max(5000.0, dist_m + 1000.0)
+                active_hazards = await self._hazard_repo.find_active_within_radius(
+                    latitude=mid_lat,
+                    longitude=mid_lng,
+                    since=utc_now() - timedelta(hours=72),
+                    radius_m=search_radius,
+                )
+            except Exception as exc:
+                logger.warning("Hazard query error: %s", exc)
+                active_hazards = []
+
+        # Build avoidance polygons for ORS
+        avoid_polygons = build_avoid_polygons(
+            active_hazards,
+            profile,
+            payload.origin_coord,
+            payload.destination_coord,
+        )
+
+        # Pre-fetch base pedestrian routes avoiding active hazards
+        base_routes: list[PedestrianRouteData] | None = None
+        try:
+            base_routes = await self._routing_adapter.get_pedestrian_route(
+                origin_coord=payload.origin_coord,
+                destination_coord=payload.destination_coord,
+                avoid_polygons=avoid_polygons if avoid_polygons else None,
+            )
+        except Exception as exc:
+            logger.warning("Routing adapter base route error: %s", exc)
+
         routes: list[RouteModel] = []
         for route_type in RouteType:
             strategy = RouteFactory.get(route_type)()
@@ -161,6 +265,7 @@ class RouteService:
                 origin_coord=payload.origin_coord,
                 destination_name=payload.destination_name,
                 destination_coord=payload.destination_coord,
+                base_routes=base_routes,
                 candidate_segments=candidates,
                 segments=candidates,
             )
@@ -174,6 +279,24 @@ class RouteService:
                 profile,
                 segments=route_segments,
             )
+
+            # Tag route with active hazards still intersecting the path
+            hazards_on_route: list[str] = []
+            for h in active_hazards:
+                h_coord = (float(h.location.coordinates[1]), float(h.location.coordinates[0]))
+                if distance_to_polyline(h_coord, route.polyline) <= 40.0:
+                    hazards_on_route.append(str(h.id))
+            route.hazard_ids = hazards_on_route
+            route.hazard_count = len(hazards_on_route)
+
+            # Penalize match score if unavoidable hazards remain on path
+            if route.hazard_count > 0:
+                route.match_score = clamp(
+                    round(route.match_score - route.hazard_count * 20.0, 2),
+                    0.0,
+                    100.0,
+                )
+
             routes.append(route)
 
         ranked = self.rank_routes(routes)
@@ -195,6 +318,7 @@ class RouteService:
             **summary.model_dump(),
             polyline=route.polyline,
             steps=route.steps,
+            hazard_ids=getattr(route, "hazard_ids", []),
         )
 
     def _to_summary(self, route: RouteModel) -> RouteVariantSummary:
@@ -206,6 +330,7 @@ class RouteService:
             match_score=route.match_score,
             sheltered_percentage=route.sheltered_percentage,
             stair_count=route.stair_count,
+            hazard_count=getattr(route, "hazard_count", 0),
             is_starred=route.is_starred,
         )
 

@@ -4,18 +4,22 @@ import pytest
 from beanie import PydanticObjectId
 
 from src.core.error_response import BadRequestError, NotFoundError
+from src.model.hazard_model import HazardLocation, HazardModel, HazardType
 from src.model.map_segment_model import MapSegmentModel
 from src.model.profile_model import HeatUvSensitivity, MobilityNeeds, PreferredPace, ProfileModel
+from src.model.repository.hazard_repo import HazardRepository
 from src.model.repository.map_segment_repo import MapSegmentRepository
 from src.model.repository.profile_repo import ProfileRepository
 from src.model.repository.route_repo import RouteRepository
 from src.model.route_model import RouteModel, RouteType
 from src.schemas.route_schema import RouteSearchRequest
+from src.services.adapters.ors_routing_adapter import OrsRoutingAdapter
 from src.services.adapters.pedestrian_routing_adapter import (
     PedestrianRouteData,
     PedestrianRoutingAdapter,
 )
 from src.services.route_service import RouteService
+from src.utils.index import utc_now
 
 MOCK_BASE_ROUTES = [
     PedestrianRouteData(
@@ -259,3 +263,47 @@ async def test_find_route_returns_detail_or_raises_not_found(route_service_deps)
     assert detail.route_id == str(route_id)
     assert len(detail.polyline) == 2
     assert detail.steps == ["Step 1"]
+
+
+@pytest.mark.asyncio
+async def test_generate_routes_with_hazards_avoids_polygons(route_service_deps):
+    hazard_repo = AsyncMock(spec=HazardRepository)
+    routing_adapter = AsyncMock(spec=OrsRoutingAdapter)
+    routing_adapter.get_pedestrian_route.return_value = MOCK_BASE_ROUTES
+
+    hazard = HazardModel.model_construct(
+        id=PydanticObjectId(),
+        hazard_type=HazardType.BLOCKED,
+        location=HazardLocation(type="Point", coordinates=(103.6860, 1.3530)),
+        report_timestamp=utc_now(),
+    )
+    hazard_repo.find_active_within_radius.return_value = [hazard]
+
+    service = RouteService(
+        map_segment_repo=route_service_deps["map_segment_repo"],
+        route_repo=route_service_deps["route_repo"],
+        profile_repo=route_service_deps["profile_repo"],
+        hazard_repo=hazard_repo,
+        routing_adapter=routing_adapter,
+    )
+
+    route_service_deps["map_segment_repo"].find_segments_in_bbox.return_value = MOCK_SEGMENTS
+    route_service_deps["profile_repo"].find_by_user_id.return_value = make_profile()
+
+    payload = RouteSearchRequest(
+        origin_name="Hall 11",
+        origin_coord=(1.3540, 103.6865),
+        destination_name="Hall 2",
+        destination_coord=(1.3500, 103.6855),
+    )
+
+    result = await service.generate_routes(
+        user_id=PydanticObjectId(),
+        payload=payload,
+    )
+
+    routing_adapter.get_pedestrian_route.assert_called_once()
+    call_kwargs = routing_adapter.get_pedestrian_route.call_args[1]
+    assert call_kwargs["avoid_polygons"] is not None
+    assert len(call_kwargs["avoid_polygons"]) == 1
+    assert result.starred_route is not None

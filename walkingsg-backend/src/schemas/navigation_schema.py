@@ -61,3 +61,16 @@ class NavEndOut(BaseResponse):
     @classmethod
     def convert_session_id(cls, value: Any) -> str:
         return str(value)
+
+
+class NavRerouteRequest(BaseRequest):
+    session_id: str = Field(min_length=1)
+    current_coord: tuple[float, float]
+
+    @field_validator("current_coord")
+    @classmethod
+    def validate_current_coord(
+        cls, value: tuple[float, float]
+    ) -> tuple[float, float]:
+        return validate_coordinates(value, "current_coord")
+

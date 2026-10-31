@@ -5,7 +5,7 @@ import { authService } from '../services/authService';
 import { profileService } from '../services/profileService';
 import { routeService } from '../services/routeService';
 import { navigationService } from '../services/navigationService';
-import { toRouteCards } from '../types/route';
+import { toRouteCard, toRouteCards } from '../types/route';
 import type { RouteCoord, RouteDetailOut, RouteSearchOut } from '../types/route';
 import type {
   NavStartResponse,
@@ -86,6 +86,7 @@ interface AppContextType {
   navTracking: NavTrackResponse | null;
   startNavigationSession: (routeId: string) => Promise<NavStartResponse>;
   trackNavPosition: (coord: [number, number], speedKmh: number) => Promise<NavTrackResponse>;
+  rerouteAroundHazards: (currentCoord: [number, number]) => Promise<RouteDetailOut>;
   endNavigationSession: (manualCancel?: boolean) => Promise<NavEndResponse>;
   isMapOutOfBounds: boolean;
   toggleOutOfBounds: () => void;
@@ -351,7 +352,38 @@ export function AppProvider({ children }: { children?: ReactNode }): ReactElemen
     if (update.status === 'COMPLETED') {
       setIsNavigating(false);
     }
+    if (update.recalculated_route) {
+      try {
+        await fetchRouteDetail(update.recalculated_route.route_id);
+      } catch (err) {
+        console.warn('Failed to fetch recalculated route detail:', err);
+      }
+    }
     return update;
+  }, [auth.accessToken, auth.userId, activeNavSession, fetchRouteDetail]);
+
+  const rerouteAroundHazards = useCallback(async (
+    currentCoord: [number, number]
+  ): Promise<RouteDetailOut> => {
+    if (!auth.accessToken || !auth.userId) {
+      throw new Error('You are not logged in');
+    }
+    if (!activeNavSession) {
+      throw new Error('No active navigation session');
+    }
+
+    const newRouteDetail = await navigationService.reroute(
+      {
+        session_id: activeNavSession.session_id,
+        current_coord: currentCoord,
+      },
+      auth.accessToken,
+      auth.userId
+    );
+
+    setSelectedRouteDetail(newRouteDetail);
+    setSelectedRoute(toRouteCard(newRouteDetail));
+    return newRouteDetail;
   }, [auth.accessToken, auth.userId, activeNavSession]);
 
   const endNavigationSession = async (
@@ -405,6 +437,7 @@ export function AppProvider({ children }: { children?: ReactNode }): ReactElemen
         navTracking,
         startNavigationSession,
         trackNavPosition,
+        rerouteAroundHazards,
         endNavigationSession,
         isMapOutOfBounds,
         toggleOutOfBounds,

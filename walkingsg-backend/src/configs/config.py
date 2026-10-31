@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     smtp_user: str | None = None
     smtp_pass: SecretStr | None = None
     smtp_from: str | None = None
+    ors_api_key: SecretStr | None = None
 
 def get_settings() -> Settings:
     return Settings()

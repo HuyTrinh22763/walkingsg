@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { View, Text, TouchableOpacity } from 'react-native';
+import { View, Text, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import OneMapView, { MapPin, LatLng } from '../../components/OneMapView';
@@ -7,6 +7,11 @@ import { HazardAlertIcon, LiftIcon, PondingIcon } from '../../components/SvgIcon
 import { useApp } from '../../context/AppContext';
 import { hazardService } from '../../services/hazardService';
 import { ThemeColors } from '../../constants/theme';
+import {
+  distanceToPolyline,
+  calculateDistanceAlongRoute,
+  formatDistanceAhead,
+} from '../../utils/routeUtils';
 import {
   formatHazardIcon,
   formatHazardTitle,
@@ -17,9 +22,10 @@ import { styles } from './NavHazardsScreen.styles';
 
 export default function NavHazardsScreen({ navigation }: any) {
   // Section Nav Hazards Logic
-  const { origin, selectedRouteDetail } = useApp();
+  const { origin, userGpsLocation, selectedRouteDetail, rerouteAroundHazards } = useApp();
   const [hazards, setHazards] = useState<HazardOut[]>([]);
   const [loading, setLoading] = useState(false);
+  const [isRerouting, setIsRerouting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useFocusEffect(
@@ -66,9 +72,46 @@ export default function NavHazardsScreen({ navigation }: any) {
     }, [origin])
   );
 
+  const currentCoord: [number, number] = userGpsLocation
+    ? [userGpsLocation.latitude, userGpsLocation.longitude]
+    : origin
+      ? [origin.latitude, origin.longitude]
+      : selectedRouteDetail?.polyline[0] ?? [1.3521, 103.8198];
 
-  const handleReroute = () => {
-    navigation.goBack();
+  const handleReroute = async () => {
+    if (isRerouting) return;
+    setIsRerouting(true);
+    try {
+      const prevHazards = selectedRouteDetail?.hazard_count ?? 0;
+      const prevDistance = selectedRouteDetail?.total_distance ?? 0;
+      const newDetail = await rerouteAroundHazards(currentCoord);
+      const newHazards = newDetail.hazard_count ?? 0;
+      const newDistance = newDetail.total_distance ?? 0;
+      const distDiff = Math.round(newDistance - prevDistance);
+
+      if (newHazards < prevHazards) {
+        const avoided = prevHazards - newHazards;
+        Alert.alert(
+          'Re-route Successful',
+          `Successfully avoided ${avoided} hazard${avoided > 1 ? 's' : ''}${distDiff > 0 ? ` (+${distDiff} m)` : ''}.`,
+          [{ text: 'OK', onPress: () => navigation.goBack() }]
+        );
+      } else {
+        Alert.alert(
+          'Re-route Completed',
+          'Path recalculated to avoid known alerts where possible.',
+          [{ text: 'OK', onPress: () => navigation.goBack() }]
+        );
+      }
+    } catch (err) {
+      Alert.alert(
+        'Re-route Error',
+        err instanceof Error ? err.message : 'Unable to reroute at this time.',
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setIsRerouting(false);
+    }
   };
 
   const renderIcon = (glyph: HazardIconName) => {
@@ -82,8 +125,9 @@ export default function NavHazardsScreen({ navigation }: any) {
   const center: LatLng | undefined = origin
     ? { lat: origin.latitude, lng: origin.longitude }
     : undefined;
+  const polylineCoords = selectedRouteDetail?.polyline ?? [];
   const routeCoordinates: LatLng[] =
-    selectedRouteDetail?.polyline.map(([lat, lng]) => ({ lat, lng })) ?? [];
+    polylineCoords.map(([lat, lng]) => ({ lat, lng }));
   const pins: MapPin[] = hazards.map(hazard => ({
     id: hazard.hazard_id,
     position: { lat: hazard.latitude, lng: hazard.longitude },
@@ -123,6 +167,12 @@ export default function NavHazardsScreen({ navigation }: any) {
           <View style={styles.navHazards_innerAlertsList}>
             {hazards.map((hazard, idx) => {
               const isLast = idx === hazards.length - 1;
+              const hCoord: [number, number] = [hazard.latitude, hazard.longitude];
+              const isOnRoute = polylineCoords.length >= 2 && distanceToPolyline(hCoord, polylineCoords) <= 50;
+              const distAhead = polylineCoords.length >= 2
+                ? calculateDistanceAlongRoute(currentCoord, hCoord, polylineCoords)
+                : 0;
+
               return (
                 <View
                   key={hazard.hazard_id}
@@ -134,6 +184,15 @@ export default function NavHazardsScreen({ navigation }: any) {
                       {formatHazardTitle(hazard.hazard_type)}
                     </Text>
                   </View>
+                  {isOnRoute ? (
+                    <Text style={styles.navHazards_innerItemDist_red}>
+                      {formatDistanceAhead(distAhead)}
+                    </Text>
+                  ) : (
+                    <Text style={styles.navHazards_innerItemDist_neutral}>
+                      Nearby
+                    </Text>
+                  )}
                 </View>
               );
             })}
@@ -143,8 +202,13 @@ export default function NavHazardsScreen({ navigation }: any) {
             style={styles.navHazards_innerButtonReroute}
             onPress={handleReroute}
             activeOpacity={0.85}
+            disabled={isRerouting}
           >
-            <Text style={styles.navHazards_innerButtonRerouteText}>Re-route around alerts</Text>
+            {isRerouting ? (
+              <ActivityIndicator color="#ffffff" size="small" />
+            ) : (
+              <Text style={styles.navHazards_innerButtonRerouteText}>Re-route around alerts</Text>
+            )}
           </TouchableOpacity>
 
           <TouchableOpacity

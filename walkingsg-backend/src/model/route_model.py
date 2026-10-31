@@ -33,6 +33,8 @@ class RouteModel(Document):
     segment_ids: list[str] = []
     polyline: list[list[float]] = []
     steps: list[str] = []
+    hazard_ids: list[str] = []
+    hazard_count: int = 0
     is_starred: bool = False
     updated_at: datetime = Field(default_factory=utc_now)
 

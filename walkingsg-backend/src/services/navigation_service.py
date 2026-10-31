@@ -11,12 +11,13 @@ from src.model.repository.route_repo import RouteRepository
 from src.schemas.navigation_schema import (
     NavEndOut,
     NavEndRequest,
+    NavRerouteRequest,
     NavStartOut,
     NavStartRequest,
     NavTrackOut,
     NavTrackRequest,
 )
-from src.schemas.route_schema import RouteSearchRequest
+from src.schemas.route_schema import RouteDetailOut, RouteSearchRequest
 from src.services.route_service import RouteService
 from src.utils.index import (
     calculate_route_progress,
@@ -232,3 +233,50 @@ class NavigationService:
             session_id=str(completed_session.id),
             status=completed_session.session_status,
         )
+
+    async def reroute(
+        self, payload: NavRerouteRequest, *, user_id: PydanticObjectId | None = None
+    ) -> RouteDetailOut:
+        try:
+            session_obj_id = PydanticObjectId(payload.session_id)
+        except Exception:
+            raise BadRequestError("Invalid session ID format")
+
+        session = await self._session_repo.find_by_id(session_id=session_obj_id)
+        if not session:
+            raise NotFoundError("Navigation session not found")
+
+        if user_id is not None and session.user_id != user_id:
+            raise ForbiddenError("Access denied to this navigation session")
+
+        if session.session_status != NavigationStatus.ACTIVE:
+            raise BadRequestError("Cannot reroute an inactive navigation session")
+
+        route = await self._route_repo.find_by_id(route_id=session.route_id)
+        if not route:
+            raise NotFoundError("Route not found")
+
+        search_req = RouteSearchRequest(
+            origin_name="Current Location",
+            origin_coord=payload.current_coord,
+            destination_name=route.destination_name,
+            destination_coord=route.destination_coordinates,
+        )
+        search_result = await self._route_service.generate_routes(
+            user_id=session.user_id,
+            payload=search_req,
+        )
+
+        starred_variant = search_result.starred_route
+        new_route_id = PydanticObjectId(starred_variant.route_id)
+
+        await self._session_repo.update_route(
+            session=session,
+            route_id=new_route_id,
+        )
+        await self._session_repo.update_location(
+            session=session,
+            current_location=payload.current_coord,
+        )
+
+        return await self._route_service.find_route(route_id=new_route_id)

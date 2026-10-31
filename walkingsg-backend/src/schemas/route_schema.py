@@ -33,6 +33,7 @@ class RouteVariantSummary(BaseResponse):
     match_score: float
     sheltered_percentage: float
     stair_count: int
+    hazard_count: int = 0
     is_starred: bool
 
     @field_validator("route_id", mode="before")
@@ -49,6 +50,7 @@ class RouteSearchOut(BaseResponse):
 class RouteDetailOut(RouteVariantSummary):
     polyline: list[list[float]] = []
     steps: list[str] = []
+    hazard_ids: list[str] = []
 
     @field_validator("polyline")
     @classmethod

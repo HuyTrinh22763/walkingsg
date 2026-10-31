@@ -16,7 +16,11 @@ from src.utils.index import utc_now
 def test_hazard_routes_split_public_and_private() -> None:
     nearby = next(route for route in public_router.routes if route.path == "/nearby")
     report = next(route for route in private_router.routes if route.path == "/report")
-    mounted = {route.path for route in router.routes}
+    mounted = {
+        f"{router.prefix}{getattr(sub_r, 'path', '')}"
+        for r in router.routes
+        for sub_r in getattr(r, "original_router", r).routes
+    }
 
     assert "GET" in nearby.methods
     assert public_router.dependencies == []
