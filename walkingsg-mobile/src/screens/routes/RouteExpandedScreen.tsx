@@ -89,6 +89,11 @@ export default function RouteExpandedScreen({ navigation }: any) {
                 <Text style={styles.routeExpanded_innerBadgeTextNeutral}>👥 {selectedRoute.crowd}</Text>
               </View>
             ) : null}
+            {(selectedRoute.hazard_count ?? 0) > 0 ? (
+              <View style={styles.routeExpanded_innerBadgeRed}>
+                <Text style={styles.routeExpanded_innerBadgeTextRed}>⚠ {selectedRoute.hazard_count} hazard{selectedRoute.hazard_count! > 1 ? 's' : ''}</Text>
+              </View>
+            ) : null}
           </View>
 
           {/* Accessibility bullet points */}

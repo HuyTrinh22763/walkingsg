@@ -87,6 +87,11 @@ export default function RouteOptionsScreen({ navigation }: any) {
                       <Text style={styles.routeOptions_innerBadgeText_neutral}>👥 {route.crowd}</Text>
                     </View>
                   ) : null}
+                  {(route.hazard_count ?? 0) > 0 ? (
+                    <View style={[styles.routeOptions_innerBadge, styles.routeOptions_innerBadge_red]}>
+                      <Text style={styles.routeOptions_innerBadgeText_red}>⚠ {route.hazard_count} hazard{route.hazard_count! > 1 ? 's' : ''}</Text>
+                    </View>
+                  ) : null}
                 </View>
               </TouchableOpacity>
             );

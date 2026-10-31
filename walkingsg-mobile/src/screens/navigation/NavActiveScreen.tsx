@@ -5,6 +5,13 @@ import * as Location from 'expo-location';
 import OneMapView, { MapPin, LatLng } from '../../components/OneMapView';
 import { TurnLeftIcon, HazardAlertIcon } from '../../components/SvgIcons';
 import { useApp } from '../../context/AppContext';
+import { hazardService } from '../../services/hazardService';
+import { formatHazardTitle, type HazardOut } from '../../types/hazard';
+import {
+  calculateDistanceAlongRoute,
+  findHazardsOnRoute,
+  formatDistanceAhead,
+} from '../../utils/routeUtils';
 import { styles } from './NavActiveScreen.styles';
 
 const DEFAULT_CENTER: LatLng = { lat: 1.3002, lng: 103.8440 };
@@ -166,6 +173,43 @@ export default function NavActiveScreen({ navigation }: any) {
     navigation.navigate('FeedReport');
   };
 
+  const [nearbyHazards, setNearbyHazards] = useState<HazardOut[]>([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchHazards = () => {
+      hazardService
+        .getNearbyHazards(currentCoord.lat, currentCoord.lng)
+        .then((res) => {
+          if (isMounted) setNearbyHazards(res);
+        })
+        .catch((err) => console.warn('Hazard fetch error during nav:', err));
+    };
+
+    fetchHazards();
+    const interval = setInterval(fetchHazards, 15000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [currentCoord.lat, currentCoord.lng]);
+
+  const hazardsOnRoute = findHazardsOnRoute(nearbyHazards, polyline, 50);
+
+  let nearestHazardInfo: { hazard: HazardOut; distanceAhead: number } | null = null;
+  if (polyline.length >= 2 && hazardsOnRoute.length > 0) {
+    for (const h of hazardsOnRoute) {
+      const dist = calculateDistanceAlongRoute(
+        [currentCoord.lat, currentCoord.lng],
+        [h.latitude, h.longitude],
+        polyline
+      );
+      if (!nearestHazardInfo || dist < nearestHazardInfo.distanceAhead) {
+        nearestHazardInfo = { hazard: h, distanceAhead: dist };
+      }
+    }
+  }
+
   // Pins configuration
   const pins: MapPin[] = [
     {
@@ -186,6 +230,15 @@ export default function NavActiveScreen({ navigation }: any) {
       detail: navTracking?.remaining_dist != null ? `${Math.round(navTracking.remaining_dist)} m left` : undefined,
     });
   }
+
+  hazardsOnRoute.forEach((h) => {
+    pins.push({
+      id: `hazard-${h.hazard_id}`,
+      position: { lat: h.latitude, lng: h.longitude },
+      type: 'hazard',
+      label: formatHazardTitle(h.hazard_type),
+    });
+  });
 
   const nextInstruction =
     navTracking?.next_instruction ||
@@ -274,7 +327,13 @@ export default function NavActiveScreen({ navigation }: any) {
           >
             <HazardAlertIcon size={18} />
             <Text style={styles.navActive_innerHazardBannerText}>
-              Lift at next MRT reported out of service (Tap to view)
+              {nearestHazardInfo
+                ? `Alert ahead: ${formatHazardTitle(nearestHazardInfo.hazard.hazard_type)} in ${formatDistanceAhead(nearestHazardInfo.distanceAhead)} (Tap to avoid)`
+                : hazardsOnRoute.length > 0
+                ? `${hazardsOnRoute.length} alert(s) on route (Tap to view)`
+                : nearbyHazards.length > 0
+                ? `${nearbyHazards.length} alert(s) reported nearby (Tap to view)`
+                : 'No alerts nearby · Route clear'}
             </Text>
           </TouchableOpacity>
         </View>

@@ -111,6 +111,17 @@ export const styles = StyleSheet.create({
     fontWeight: '700',
     color: ThemeColors.inkSoft,
   },
+  routeExpanded_innerBadgeRed: {
+    backgroundColor: ThemeColors.hazardTint,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  routeExpanded_innerBadgeTextRed: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: ThemeColors.hazard,
+  },
   routeExpanded_innerFeaturesList: {
     backgroundColor: ThemeColors.paper2,
     borderRadius: 10,
