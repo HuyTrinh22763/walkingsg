@@ -24,6 +24,8 @@ export interface OneMapViewProps {
   routeCoordinates?: LatLng[];
   /** Custom pins to render on the map */
   pins?: MapPin[];
+  /** Real-time compass heading in degrees (0-360) for navigation view cone */
+  userHeading?: number | null;
   /** Show dashed red out-of-bounds boundary ring */
   showOutOfBoundsBoundary?: boolean;
   /** Ref handle to imperatively call zoom in/out */
@@ -62,13 +64,34 @@ function buildLeafletHtml(props: OneMapViewProps): string {
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body, #map { width: 100%; height: 100%; background: #e7eed9; }
 
-    /* Custom pulsing user location dot */
+    /* Custom pulsing user location dot and navigation scope beam */
     @keyframes pulse {
       0%   { transform: scale(1);   opacity: 1; }
       50%  { transform: scale(1.6); opacity: 0.4; }
       100% { transform: scale(1);   opacity: 1; }
     }
+    .user-pin-wrapper {
+      position: relative;
+      width: 28px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .user-heading-cone {
+      position: absolute;
+      width: 140px;
+      height: 140px;
+      top: -56px;
+      left: -56px;
+      pointer-events: none;
+      transform-origin: 70px 70px;
+      transition: transform 0.12s cubic-bezier(0.2, 0.8, 0.4, 1), opacity 0.25s ease;
+      z-index: 1;
+    }
     .user-dot-ring {
+      position: relative;
+      z-index: 2;
       width: 28px; height: 28px; border-radius: 50%;
       background: rgba(31,111,67,0.2);
       display: flex; align-items: center; justify-content: center;
@@ -155,11 +178,65 @@ function buildLeafletHtml(props: OneMapViewProps): string {
     var routeLayer = null;
     var routeCoords = ${routeJson};
     var pins = ${pinsJson};
+    var currentHeading = ${props.userHeading != null ? props.userHeading : 'null'};
+    var currentAngle = ${props.userHeading != null ? props.userHeading : 'null'};
+
+    function unwrapAngle(targetDeg, current) {
+      if (current === null || isNaN(current)) return targetDeg;
+      var diff = (targetDeg - current) % 360;
+      if (diff <= -180) diff += 360;
+      if (diff > 180) diff -= 360;
+      return current + diff;
+    }
+
+    function updateHeading(deg) {
+      currentHeading = deg;
+      var cone = document.getElementById('user-heading-cone');
+      if (!cone) return;
+      if (deg === null || deg === undefined || isNaN(deg)) {
+        cone.style.opacity = '0';
+        return;
+      }
+      var normalized = ((deg % 360) + 360) % 360;
+      currentAngle = unwrapAngle(normalized, currentAngle);
+      cone.style.transform = 'rotate(' + currentAngle + 'deg)';
+      cone.style.opacity = '1';
+    }
 
     // --- Custom Pin Factory ---
     function createUserIcon() {
+      var transformStyle = (currentAngle !== null && !isNaN(currentAngle))
+        ? 'transform: rotate(' + currentAngle + 'deg); opacity: 1;'
+        : 'opacity: 0;';
       return L.divIcon({
-        html: '<div class="user-dot-ring"><div class="user-dot-core"></div></div>',
+        html: '<div class="user-pin-wrapper">' +
+                '<div id="user-heading-cone" class="user-heading-cone" style="' + transformStyle + '">' +
+                  '<svg width="140" height="140" viewBox="0 0 140 140" style="overflow:visible;">' +
+                    '<defs>' +
+                      '<radialGradient id="headingConeGrad" gradientUnits="userSpaceOnUse" cx="70" cy="70" r="70" fx="70" fy="70">' +
+                        '<stop offset="0%" stop-color="#1f6f43" stop-opacity="0.45" />' +
+                        '<stop offset="35%" stop-color="#22c55e" stop-opacity="0.22" />' +
+                        '<stop offset="70%" stop-color="#4ade80" stop-opacity="0.07" />' +
+                        '<stop offset="100%" stop-color="#4ade80" stop-opacity="0" />' +
+                      '</radialGradient>' +
+                      '<radialGradient id="headingCoreGrad" gradientUnits="userSpaceOnUse" cx="70" cy="70" r="50" fx="70" fy="70">' +
+                        '<stop offset="0%" stop-color="#1f6f43" stop-opacity="0.65" />' +
+                        '<stop offset="40%" stop-color="#22c55e" stop-opacity="0.3" />' +
+                        '<stop offset="100%" stop-color="#1f6f43" stop-opacity="0" />' +
+                      '</radialGradient>' +
+                      '<linearGradient id="headingBeamLine" gradientUnits="userSpaceOnUse" x1="70" y1="70" x2="70" y2="12">' +
+                        '<stop offset="0%" stop-color="#ffffff" stop-opacity="0.75" />' +
+                        '<stop offset="60%" stop-color="#ffffff" stop-opacity="0.3" />' +
+                        '<stop offset="100%" stop-color="#ffffff" stop-opacity="0" />' +
+                      '</linearGradient>' +
+                    '</defs>' +
+                    '<path d="M 70 70 L 36 11.11 A 68 68 0 0 1 104 11.11 Z" fill="url(#headingConeGrad)" />' +
+                    '<path d="M 70 70 L 57.06 21.7 A 50 50 0 0 1 82.94 21.7 Z" fill="url(#headingCoreGrad)" />' +
+                    '<line x1="70" y1="56" x2="70" y2="16" stroke="url(#headingBeamLine)" stroke-width="2" stroke-linecap="round" />' +
+                  '</svg>' +
+                '</div>' +
+                '<div class="user-dot-ring"><div class="user-dot-core"></div></div>' +
+              '</div>',
         className: '', iconSize: [28, 28], iconAnchor: [14, 14],
       });
     }
@@ -268,6 +345,7 @@ function buildLeafletHtml(props: OneMapViewProps): string {
         if (data.type === 'panTo') map.panTo([data.lat, data.lng], { animate: true });
         if (data.type === 'setPins' && Array.isArray(data.pins)) renderPins(data.pins);
         if (data.type === 'setRoute' || data.type === 'drawRoute') setRoute(data.coordinates || []);
+        if (data.type === 'setHeading') updateHeading(data.heading);
       } catch (e) {}
     }
 
@@ -317,6 +395,9 @@ export default function OneMapView(props: OneMapViewProps) {
     postToMap({ type: 'setRoute', coordinates: current.routeCoordinates ?? [] });
     if (current.center) {
       postToMap({ type: 'panTo', lat: current.center.lat, lng: current.center.lng });
+    }
+    if (current.userHeading != null) {
+      postToMap({ type: 'setHeading', heading: current.userHeading });
     }
   }, [postToMap]);
 
@@ -370,6 +451,11 @@ export default function OneMapView(props: OneMapViewProps) {
     if (!isReadyRef.current || !props.center) return;
     postToMap({ type: 'panTo', lat: props.center.lat, lng: props.center.lng });
   }, [props.center?.lat, props.center?.lng, postToMap]);
+
+  useEffect(() => {
+    if (!isReadyRef.current) return;
+    postToMap({ type: 'setHeading', heading: propsRef.current.userHeading ?? null });
+  }, [props.userHeading, postToMap]);
 
   const handleNativeMessage = useCallback((event: { nativeEvent: { data: string } }) => {
     try {

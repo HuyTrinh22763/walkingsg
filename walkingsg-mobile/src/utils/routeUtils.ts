@@ -128,3 +128,22 @@ export function formatDistanceAhead(meters: number): string {
   if (meters < 1000) return `${Math.round(meters)} m`;
   return `${(meters / 1000).toFixed(1)} km`;
 }
+
+export function calculateBearing(
+  coord1: [number, number],
+  coord2: [number, number]
+): number {
+  const [lat1, lon1] = coord1;
+  const [lat2, lon2] = coord2;
+  const phi1 = (lat1 * Math.PI) / 180.0;
+  const phi2 = (lat2 * Math.PI) / 180.0;
+  const dlambda = ((lon2 - lon1) * Math.PI) / 180.0;
+
+  const y = Math.sin(dlambda) * Math.cos(phi2);
+  const x =
+    Math.cos(phi1) * Math.sin(phi2) -
+    Math.sin(phi1) * Math.cos(phi2) * Math.cos(dlambda);
+
+  const initialBearing = Math.atan2(y, x) * (180.0 / Math.PI);
+  return (initialBearing + 360.0) % 360.0;
+}

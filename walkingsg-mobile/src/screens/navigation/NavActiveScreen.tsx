@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { View, Text, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
@@ -8,6 +8,7 @@ import { useApp } from '../../context/AppContext';
 import { hazardService } from '../../services/hazardService';
 import { formatHazardTitle, type HazardOut } from '../../types/hazard';
 import {
+  calculateBearing,
   calculateDistanceAlongRoute,
   findHazardsOnRoute,
   formatDistanceAhead,
@@ -45,6 +46,63 @@ export default function NavActiveScreen({ navigation }: any) {
   const trackRef = useRef(trackNavPosition);
   const inFlightRef = useRef(false);
   const pendingRef = useRef<{ coord: [number, number]; speedKmh: number } | null>(null);
+
+  // Section Nav Active Heading Logic
+  const initialRouteBearing = useMemo(() => {
+    if (polyline.length >= 2) {
+      return Math.round(calculateBearing(polyline[0], polyline[1]));
+    }
+    return null;
+  }, [polyline]);
+
+  const [userHeading, setUserHeading] = useState<number | null>(initialRouteBearing);
+  const hasCompassRef = useRef(false);
+  const lastHeadingRef = useRef<number | null>(null);
+
+  // Real device hardware compass heading subscription
+  useEffect(() => {
+    if (gpsStatus !== 'granted' || (!isNavigating && !activeNavSession)) {
+      return;
+    }
+
+    let headingSub: Location.LocationSubscription | null = null;
+    let isCancelled = false;
+
+    async function startHeadingWatch() {
+      try {
+        headingSub = await Location.watchHeadingAsync((h) => {
+          if (isCancelled) return;
+          const deg =
+            h.trueHeading != null && h.trueHeading >= 0 ? h.trueHeading : h.magHeading;
+          if (deg != null && deg >= 0) {
+            hasCompassRef.current = true;
+            const rounded = Math.round(deg);
+            if (
+              lastHeadingRef.current === null ||
+              Math.abs(rounded - lastHeadingRef.current) >= 1
+            ) {
+              lastHeadingRef.current = rounded;
+              setUserHeading(rounded);
+            }
+          }
+        });
+      } catch (err) {
+        console.warn('Compass sensor unavailable, relying on GPS bearing fallback:', err);
+      }
+    }
+
+    startHeadingWatch();
+
+    return () => {
+      isCancelled = true;
+      hasCompassRef.current = false;
+      lastHeadingRef.current = null;
+      if (headingSub) {
+        headingSub.remove();
+      }
+    };
+  }, [gpsStatus, isNavigating, activeNavSession]);
+  // End Section Nav Active Heading Logic
 
   useEffect(() => {
     trackRef.current = trackNavPosition;
@@ -104,6 +162,21 @@ export default function NavActiveScreen({ navigation }: any) {
                 : 0;
 
             setCurrentCoord({ lat, lng });
+            // GPS course bearing fallback when device lacks magnetometer or in simulator
+            if (
+              !hasCompassRef.current &&
+              loc.coords.heading != null &&
+              loc.coords.heading >= 0
+            ) {
+              const roundedGps = Math.round(loc.coords.heading);
+              if (
+                lastHeadingRef.current === null ||
+                Math.abs(roundedGps - lastHeadingRef.current) >= 2
+              ) {
+                lastHeadingRef.current = roundedGps;
+                setUserHeading(roundedGps);
+              }
+            }
             send([lat, lng], speedKmh);
           }
         );
@@ -267,6 +340,7 @@ export default function NavActiveScreen({ navigation }: any) {
           zoom={16}
           routeCoordinates={routeCoords}
           pins={pins}
+          userHeading={userHeading}
         />
 
         {/* Top Guidance HUD */}
