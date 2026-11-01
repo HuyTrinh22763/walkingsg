@@ -6,12 +6,17 @@
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.huajaap.walkingsgmobile",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#f3eee1"
-      }
+      },
+      "package": "com.huajaap.walkingsgmobile"
     },
     "plugins": [
       "expo-asset",
