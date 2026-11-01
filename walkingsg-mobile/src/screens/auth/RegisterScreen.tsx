@@ -1,9 +1,18 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, Modal, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LeafIcon, EyeIcon, CheckCircleIcon, CircleOutlineIcon, MailIcon } from '../../components/SvgIcons';
 import { useApp } from '../../context/AppContext';
 import { styles } from './RegisterScreen.styles';
+
+const OTP_EXPIRY_SECONDS = 10 * 60;
+
+function formatCountdown(totalSeconds: number): string {
+  const clamped = Math.max(0, totalSeconds);
+  const minutes = Math.floor(clamped / 60);
+  const seconds = clamped % 60;
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
 
 export default function RegisterScreen({ navigation }: any) {
   // Section Auth Register State
@@ -16,8 +25,24 @@ export default function RegisterScreen({ navigation }: any) {
   // OTP Verification State
   const [showOtpModal, setShowOtpModal] = useState(false);
   const [otpCode, setOtpCode] = useState('');
-  const [otpTimer, setOtpTimer] = useState('10:00');
+  const [otpExpiresAt, setOtpExpiresAt] = useState<number | null>(null);
+  const [otpSecondsLeft, setOtpSecondsLeft] = useState(OTP_EXPIRY_SECONDS);
   const [isVerifying, setIsVerifying] = useState(false);
+
+  useEffect(() => {
+    if (!showOtpModal || otpExpiresAt === null) {
+      return;
+    }
+
+    const syncRemaining = () => {
+      const remaining = Math.max(0, Math.ceil((otpExpiresAt - Date.now()) / 1000));
+      setOtpSecondsLeft(remaining);
+    };
+
+    syncRemaining();
+    const intervalId = setInterval(syncRemaining, 1000);
+    return () => clearInterval(intervalId);
+  }, [showOtpModal, otpExpiresAt]);
 
   const lengthMet = password.length >= 8;
   const specialMet = /[^a-zA-Z0-9\s]/.test(password);
@@ -38,6 +63,9 @@ export default function RegisterScreen({ navigation }: any) {
         user_email: email.trim(),
         password: password,
       });
+      setOtpCode('');
+      setOtpSecondsLeft(OTP_EXPIRY_SECONDS);
+      setOtpExpiresAt(Date.now() + OTP_EXPIRY_SECONDS * 1000);
       setShowOtpModal(true);
       Alert.alert(
         'Verification Code Sent',
@@ -51,6 +79,10 @@ export default function RegisterScreen({ navigation }: any) {
   };
 
   const handleVerifyOtp = async () => {
+    if (otpSecondsLeft <= 0) {
+      Alert.alert('Code Expired', 'Your verification code has expired. Tap "Resend code" to receive a new one.');
+      return;
+    }
     if (otpCode.trim().length !== 6) {
       Alert.alert('Invalid Code', 'Please enter a valid 6-digit verification code.');
       return;
@@ -63,6 +95,7 @@ export default function RegisterScreen({ navigation }: any) {
         otp_code: otpCode.trim(),
       });
       setShowOtpModal(false);
+      setOtpExpiresAt(null);
       Alert.alert('Account Verified', 'Your WalkingSG account has been activated! Please log in.', [
         {
           text: 'Go to Login',
@@ -79,7 +112,9 @@ export default function RegisterScreen({ navigation }: any) {
   const handleResendOtp = async () => {
     try {
       await resendOtp({ user_email: email.trim() });
-      setOtpTimer('10:00');
+      setOtpCode('');
+      setOtpSecondsLeft(OTP_EXPIRY_SECONDS);
+      setOtpExpiresAt(Date.now() + OTP_EXPIRY_SECONDS * 1000);
       Alert.alert('Code Resent', `A new 6-digit code has been sent for ${email}. Check your server console.`);
     } catch (error: any) {
         Alert.alert('Resend Failed', error.message || 'Unable to resend OTP.');
@@ -198,7 +233,10 @@ export default function RegisterScreen({ navigation }: any) {
             />
 
             <Text style={styles.authRegister_innerModalExpiry}>
-              Code expires in {otpTimer} ·{' '}
+              {otpSecondsLeft > 0
+                ? `Code expires in ${formatCountdown(otpSecondsLeft)}`
+                : 'Code expired'}{' '}
+              ·{' '}
               <Text
                 style={{ color: '#1f6f43', fontWeight: '700' }}
                 onPress={handleResendOtp}

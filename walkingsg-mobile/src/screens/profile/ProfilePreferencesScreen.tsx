@@ -20,9 +20,9 @@ export default function ProfilePreferencesScreen({ navigation }: any) {
     setIsSaving(true);
     try {
       await saveProfile({});
-      Alert.alert('Success', 'Your mobility preferences have been saved.');
+      Alert.alert('Preferences updated successfully', 'Your mobility preferences have been saved.');
     } catch (error) {
-      Alert.alert('Could not save', error instanceof Error ? error.message : 'Something went wrong');
+      Alert.alert('Failed to update preferences. Please try again', error instanceof Error ? error.message : 'Something went wrong');
     } finally {
       setIsSaving(false);
     }

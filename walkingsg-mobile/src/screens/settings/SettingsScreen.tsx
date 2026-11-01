@@ -41,7 +41,7 @@ export default function SettingsScreen({ navigation }: any) {
         },
       ]);
     } catch (error) {
-      Alert.alert('Could not delete account', error instanceof Error ? error.message : 'Something went wrong');
+      Alert.alert('Unable to delete account at this time. Please try again later!', error instanceof Error ? error.message : 'Something went wrong');
     } finally {
       setIsDeleting(false);
     }

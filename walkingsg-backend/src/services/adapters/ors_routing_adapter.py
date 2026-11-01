@@ -108,10 +108,11 @@ class OrsRoutingAdapter:
                         [float(coord[1]), float(coord[0])] for coord in raw_coords
                     ]
 
-                    properties = feat.get("properties", {})
-                    summary = properties.get("summary", {})
+                    properties = feat.get("properties") or {}
+                    summary = properties.get("summary") or {}
                     distance_m = float(summary.get("distance", 0.0))
                     duration_s = int(round(float(summary.get("duration", 0.0))))
+                    steps = self._extract_steps(properties)
 
                     if route_coords:
                         results.append(
@@ -119,7 +120,7 @@ class OrsRoutingAdapter:
                                 polyline=route_coords,
                                 distance_meters=distance_m,
                                 duration_seconds=duration_s,
-                                steps=[],
+                                steps=steps,
                             )
                         )
 
@@ -135,3 +136,16 @@ class OrsRoutingAdapter:
             return await self._fallback_adapter.get_pedestrian_route(
                 origin_coord=origin_coord, destination_coord=destination_coord
             )
+
+    def _extract_steps(self, properties: dict[str, Any]) -> list[str]:
+        steps: list[str] = []
+        for segment in properties.get("segments") or []:
+            if not isinstance(segment, dict):
+                continue
+            for step in segment.get("steps") or []:
+                if not isinstance(step, dict):
+                    continue
+                instruction = str(step.get("instruction") or "").strip()
+                if instruction:
+                    steps.append(instruction)
+        return steps

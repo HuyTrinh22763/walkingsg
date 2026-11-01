@@ -32,6 +32,7 @@ class ProfileModel(Document):
     user_id: PydanticObjectId
     name: str = ""
     age: int | None = None
+    date_of_birth: str | None = None
     mobility_needs: MobilityNeeds = MobilityNeeds.NONE
     heat_uv_sensitivity: HeatUvSensitivity = HeatUvSensitivity.MEDIUM
     max_stairs_per_route: int = Field(default=10, ge=0, le=50)

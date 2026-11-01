@@ -5,6 +5,7 @@ export type PreferredPace = 'Slow' | 'Relaxed' | 'Brisk';
 export interface ProfileUpdateRequest {
   name: string;
   age: number;
+  date_of_birth?: string;
   mobility_needs: MobilityNeeds;
   heat_uv_sensitivity: HeatUvSensitivity;
   max_stairs_per_route: number;
@@ -16,6 +17,8 @@ export interface ProfileResponse {
   user_id: string;
   name: string;
   age: number | null;
+  date_of_birth: string | null;
+  is_onboarded: boolean;
   mobility_needs: MobilityNeeds;
   heat_uv_sensitivity: HeatUvSensitivity;
   max_stairs_per_route: number;

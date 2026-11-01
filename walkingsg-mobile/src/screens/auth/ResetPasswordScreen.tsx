@@ -1,9 +1,18 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LeafIcon, MailIcon, CheckCircleIcon } from '../../components/SvgIcons';
 import { useApp } from '../../context/AppContext';
 import { styles } from './ResetPasswordScreen.styles';
+
+const OTP_EXPIRY_SECONDS = 10 * 60;
+
+function formatCountdown(totalSeconds: number): string {
+  const clamped = Math.max(0, totalSeconds);
+  const minutes = Math.floor(clamped / 60);
+  const seconds = clamped % 60;
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
 
 export default function ResetPasswordScreen({ navigation }: any) {
   // Section Auth Reset State
@@ -14,7 +23,23 @@ export default function ResetPasswordScreen({ navigation }: any) {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [step, setStep] = useState<'email' | 'otp_gate' | 'new_password'>('email');
   const [isLoading, setIsLoading] = useState(false);
-  const [otpTimer, setOtpTimer] = useState('10:00');
+  const [otpExpiresAt, setOtpExpiresAt] = useState<number | null>(null);
+  const [otpSecondsLeft, setOtpSecondsLeft] = useState(OTP_EXPIRY_SECONDS);
+
+  useEffect(() => {
+    if (step !== 'otp_gate' || otpExpiresAt === null) {
+      return;
+    }
+
+    const syncRemaining = () => {
+      const remaining = Math.max(0, Math.ceil((otpExpiresAt - Date.now()) / 1000));
+      setOtpSecondsLeft(remaining);
+    };
+
+    syncRemaining();
+    const intervalId = setInterval(syncRemaining, 1000);
+    return () => clearInterval(intervalId);
+  }, [step, otpExpiresAt]);
 
   const handleRequestOtp = async () => {
     if (!email.trim() || !email.includes('@')) {
@@ -25,8 +50,10 @@ export default function ResetPasswordScreen({ navigation }: any) {
     setIsLoading(true);
     try {
       await forgotPassword({ user_email: email.trim() });
+      setOtpCode('');
+      setOtpSecondsLeft(OTP_EXPIRY_SECONDS);
+      setOtpExpiresAt(Date.now() + OTP_EXPIRY_SECONDS * 1000);
       setStep('otp_gate');
-      setOtpTimer('10:00');
       Alert.alert(
         'Verification Code Sent',
         `A 6-digit verification code has been dispatched for ${email.trim()}. Check your server console (or email in production).`
@@ -39,6 +66,10 @@ export default function ResetPasswordScreen({ navigation }: any) {
   };
 
   const handleVerifyOtpGate = async () => {
+    if (otpSecondsLeft <= 0) {
+      Alert.alert('Code Expired', 'Your verification code has expired. Tap "Resend code" to receive a new one.');
+      return;
+    }
     if (otpCode.trim().length !== 6) {
       Alert.alert('Invalid Code', 'Please enter the complete 6-digit verification code.');
       return;
@@ -50,6 +81,7 @@ export default function ResetPasswordScreen({ navigation }: any) {
         user_email: email.trim(),
         otp_code: otpCode.trim(),
       });
+      setOtpExpiresAt(null);
       setStep('new_password');
       Alert.alert('Identity Verified', 'OTP code verified successfully! You may now set your new password.');
     } catch (error: any) {
@@ -63,7 +95,9 @@ export default function ResetPasswordScreen({ navigation }: any) {
     setIsLoading(true);
     try {
       await forgotPassword({ user_email: email.trim() });
-      setOtpTimer('10:00');
+      setOtpCode('');
+      setOtpSecondsLeft(OTP_EXPIRY_SECONDS);
+      setOtpExpiresAt(Date.now() + OTP_EXPIRY_SECONDS * 1000);
       Alert.alert('Code Resent', `A new 6-digit code has been sent for ${email.trim()}. Check your server console.`);
     } catch (error: any) {
       Alert.alert('Resend Failed', error.message || 'Unable to resend OTP.');
@@ -174,7 +208,10 @@ export default function ResetPasswordScreen({ navigation }: any) {
             </View>
 
             <Text style={styles.authReset_innerCountdownText}>
-              Code expires in {otpTimer} ·{' '}
+              {otpSecondsLeft > 0
+                ? `Code expires in ${formatCountdown(otpSecondsLeft)}`
+                : 'Code expired'}{' '}
+              ·{' '}
               <Text
                 style={{ color: '#1f6f43', fontWeight: '700' }}
                 onPress={handleResendOtp}

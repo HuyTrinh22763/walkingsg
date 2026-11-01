@@ -41,10 +41,10 @@ NEUTRAL_CONFIDENCE_SCORE = 50.0
 BBOX_PADDING_DEG = 0.01
 
 BASE_WEIGHTS = {
-    "efficiency": 0.30,
-    "shelter": 0.25,
-    "effort": 0.25,
-    "confidence": 0.20,
+    "efficiency": 0.25,
+    "shelter": 0.15,
+    "effort": 0.10,
+    "confidence": 0.15,
 }
 
 ROUTE_TYPE_PRIORITY = {
@@ -335,16 +335,32 @@ class RouteService:
         )
 
     def _select_weights(self, profile: ProfileModel) -> dict[str, float]:
-        weights = dict(BASE_WEIGHTS)
+        # weff = 0.25
+        w_eff = 0.25
+
+        # wshelter: 0.20 for High UV, 0.15 for Medium, 0.10 for Low
         if profile.heat_uv_sensitivity == HeatUvSensitivity.HIGH:
-            weights["shelter"] += 0.20
-        if profile.mobility_needs in (
+            w_shelter = 0.20
+        elif profile.heat_uv_sensitivity == HeatUvSensitivity.LOW:
+            w_shelter = 0.10
+        else:
+            w_shelter = 0.15
+
+        # weffort: 0.20 if age >= 65 or mobility aid used, else 0.10
+        is_senior = profile.age is not None and profile.age >= 65
+        uses_mobility_aid = profile.mobility_needs in (
             MobilityNeeds.WHEELCHAIR,
             MobilityNeeds.MOBILITY_AID,
-        ):
-            weights["effort"] += 0.20
-        if profile.preferred_pace == PreferredPace.BRISK:
-            weights["efficiency"] += 0.10
-        elif profile.preferred_pace == PreferredPace.SLOW:
-            weights["effort"] += 0.10
-        return normalize_weights(weights)
+        )
+        w_effort = 0.20 if (is_senior or uses_mobility_aid) else 0.10
+
+        # wconf = 0.15
+        w_conf = 0.15
+
+        raw_weights = {
+            "efficiency": w_eff,
+            "shelter": w_shelter,
+            "effort": w_effort,
+            "confidence": w_conf,
+        }
+        return normalize_weights(raw_weights)

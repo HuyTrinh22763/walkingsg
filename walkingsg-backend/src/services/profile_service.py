@@ -1,3 +1,5 @@
+from datetime import date, datetime
+
 from beanie import PydanticObjectId
 
 from src.core.error_response import BadRequestError, NotFoundError
@@ -6,8 +8,18 @@ from src.model.repository.credentials_repo import CredentialsRepository
 from src.model.repository.otp_repo import OtpRepository
 from src.model.repository.profile_repo import ProfileRepository
 from src.model.repository.user_repo import UserRepository
-from src.schemas.profile_schema import DeleteAccountRequest, ProfileOut, ProfileUpdate
+from src.schemas.profile_schema import (
+    SINGAPORE_TZ,
+    DeleteAccountRequest,
+    ProfileOut,
+    ProfileUpdate,
+)
 from src.services.key_token_service import KeyTokenService
+
+
+def _calculate_age(dob: date, today: date) -> int:
+    has_had_birthday = (today.month, today.day) >= (dob.month, dob.day)
+    return max(0, today.year - dob.year - (0 if has_had_birthday else 1))
 
 
 class ProfileService:
@@ -34,7 +46,11 @@ class ProfileService:
     async def update_profile(
         self, user_id: PydanticObjectId, payload: ProfileUpdate
     ) -> ProfileOut:
-        fields = payload.model_dump()
+        fields = payload.model_dump(exclude_unset=True)
+        if payload.date_of_birth is not None:
+            dob = date.fromisoformat(payload.date_of_birth)
+            today_sgt = datetime.now(SINGAPORE_TZ).date()
+            fields["age"] = _calculate_age(dob, today_sgt)
         if payload.mobility_needs == MobilityNeeds.WHEELCHAIR:
             fields["max_stairs_per_route"] = 0
 

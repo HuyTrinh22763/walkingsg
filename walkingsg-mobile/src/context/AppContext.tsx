@@ -42,6 +42,8 @@ export interface UserPreferences {
   fullName: string;
   email: string;
   age: number | null;
+  dateOfBirth: string | null;
+  isOnboarded: boolean;
   mobilityMode: MobilityNeeds;
   maxStairs: number;
   heatSensitivity: HeatUvSensitivity;
@@ -49,6 +51,10 @@ export interface UserPreferences {
   maxDuration: '15 min' | '30 min' | '45 min' | '60 min';
   isDeclared: boolean;
 }
+
+export type LoginSessionResult = LoginResponse & {
+  needsOnboarding: boolean;
+};
 
 export interface AuthSession {
   userId: string | null;
@@ -66,7 +72,7 @@ interface AppContextType {
   signup: (payload: SignUpRequest) => Promise<SignUpResponse>;
   verifyOtp: (payload: OtpVerifyRequest) => Promise<OtpVerifyResponse>;
   resendOtp: (payload: ResendOtpRequest) => Promise<boolean>;
-  login: (payload: LoginRequest) => Promise<LoginResponse>;
+  login: (payload: LoginRequest) => Promise<LoginSessionResult>;
   forgotPassword: (payload: ForgotPasswordRequest) => Promise<boolean>;
   resetPassword: (payload: ResetPasswordRequest) => Promise<boolean>;
   logoutUser: () => Promise<void>;
@@ -108,6 +114,8 @@ const DEFAULT_USER: UserPreferences = {
   fullName: '',
   email: '',
   age: null,
+  dateOfBirth: null,
+  isOnboarded: false,
   mobilityMode: 'None',
   maxStairs: 10,
   heatSensitivity: 'Medium',
@@ -124,10 +132,14 @@ const DEFAULT_AUTH: AuthSession = {
 };
 
 function toUserPreferences(profile: ProfileResponse, prev: UserPreferences): UserPreferences {
+  const isOnboarded =
+    profile.is_onboarded ?? (Boolean(profile.name.trim()) && profile.age !== null);
   return {
     ...prev,
     fullName: profile.name,
     age: profile.age,
+    dateOfBirth: profile.date_of_birth ?? prev.dateOfBirth,
+    isOnboarded,
     mobilityMode: profile.mobility_needs,
     maxStairs: profile.max_stairs_per_route,
     heatSensitivity: profile.heat_uv_sensitivity,
@@ -135,15 +147,18 @@ function toUserPreferences(profile: ProfileResponse, prev: UserPreferences): Use
   };
 }
 
-function toProfileUpdateRequest(user: UserPreferences): ProfileUpdateRequest {
+function toProfileUpdateRequest(
+  user: UserPreferences,
+  explicitDob?: string
+): ProfileUpdateRequest {
   const name = user.fullName.trim();
   if (name.length < 2 || name.length > 50) {
-    throw new Error('Please enter your full name (2–50 characters) in the Personal Declaration form');
+    throw new Error('Please enter a valid username (2–50 characters)');
   }
-  if (user.age === null || user.age <= 0) {
+  if (user.age === null || user.age < 0 || user.age > 120) {
     throw new Error('Please enter a valid age');
   }
-  return {
+  const request: ProfileUpdateRequest = {
     name,
     age: user.age,
     mobility_needs: user.mobilityMode,
@@ -151,6 +166,10 @@ function toProfileUpdateRequest(user: UserPreferences): ProfileUpdateRequest {
     max_stairs_per_route: user.maxStairs,
     preferred_pace: user.preferredPace,
   };
+  if (explicitDob) {
+    request.date_of_birth = explicitDob;
+  }
+  return request;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -194,7 +213,8 @@ export function AppProvider({ children }: { children?: ReactNode }): ReactElemen
 
   const saveProfile = async (updates: Partial<UserPreferences>): Promise<void> => {
     const { accessToken, userId } = requireSession();
-    const request = toProfileUpdateRequest({ ...user, ...updates });
+    const merged = { ...user, ...updates };
+    const request = toProfileUpdateRequest(merged, updates.dateOfBirth ?? undefined);
     const profile = await profileService.updateProfile(accessToken, userId, request);
     setUser((prev: UserPreferences) => toUserPreferences(profile, { ...prev, ...updates }));
   };
@@ -217,9 +237,13 @@ export function AppProvider({ children }: { children?: ReactNode }): ReactElemen
     return await authService.resendOtp(payload);
   };
 
-  const login = async (payload: LoginRequest): Promise<LoginResponse> => {
+  const login = async (payload: LoginRequest): Promise<LoginSessionResult> => {
     const res = await authService.login(payload);
     const profile = await profileService.getProfile(res.access_token, res.user_id);
+    const needsOnboarding =
+      profile.is_onboarded === false ||
+      !profile.name.trim() ||
+      profile.age === null;
     setAuth({
       userId: res.user_id,
       accessToken: res.access_token,
@@ -229,7 +253,7 @@ export function AppProvider({ children }: { children?: ReactNode }): ReactElemen
     setUser((prev: UserPreferences) =>
       toUserPreferences(profile, { ...prev, email: res.user_email })
     );
-    return res;
+    return { ...res, needsOnboarding };
   };
 
   useEffect(() => {

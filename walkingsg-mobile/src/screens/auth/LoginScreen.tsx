@@ -20,11 +20,11 @@ export default function LoginScreen({ navigation }: any) {
 
     setIsLoading(true);
     try {
-      await login({
+      const res = await login({
         user_email: email.trim(),
         password: password,
       });
-      navigation.replace('MainTabs');
+      navigation.replace(res.needsOnboarding ? 'Onboarding' : 'MainTabs');
     } catch (error: any) {
         Alert.alert('Login Failed', error.message || 'Unable to log in. Please try again.');
     } finally {

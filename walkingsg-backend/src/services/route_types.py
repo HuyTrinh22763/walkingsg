@@ -1,4 +1,6 @@
 from abc import ABC, abstractmethod # Abstract Base Class (interface)
+import logging
+import math
 from typing import ClassVar
 
 from beanie import PydanticObjectId
@@ -10,9 +12,17 @@ from src.services.adapters.pedestrian_routing_adapter import (
     PedestrianRouteData,
     PedestrianRoutingAdapter,
 )
-from src.utils.index import clamp, haversine_distance
+from src.utils.index import (
+    clamp,
+    distance_to_polyline,
+    haversine_distance,
+)
+
+logger = logging.getLogger(__name__)
 
 WALKING_SPEED_MPS = 1.25
+DIRECT_BUFFER_METRES = 30.0
+VARIANT_BUFFER_METRES = 60.0
 
 
 class BaseRouteStrategy(ABC):
@@ -47,24 +57,31 @@ class BaseRouteStrategy(ABC):
         preferred_index: int = 0,
         via_coord: tuple[float, float] | None = None,
     ) -> PedestrianRouteData:
-        if base_routes:
-            if 0 <= preferred_index < len(base_routes):
-                return base_routes[preferred_index]
-            if len(base_routes) > 0:
-                return base_routes[0]
+        if base_routes and via_coord is not None:
+            passing = [
+                r
+                for r in base_routes
+                if distance_to_polyline(via_coord, r.polyline) <= 80.0
+            ]
+            if passing:
+                return passing[0]
 
-        try:
-            routes = await self._adapter.get_pedestrian_route(
-                origin_coord=origin_coord,
-                destination_coord=destination_coord,
-                via_coord=via_coord,
-            )
-            if routes:
-                if 0 <= preferred_index < len(routes):
-                    return routes[preferred_index]
-                return routes[0]
-        except Exception:
-            pass
+        if not base_routes or via_coord is not None:
+            try:
+                routes = await self._adapter.get_pedestrian_route(
+                    origin_coord=origin_coord,
+                    destination_coord=destination_coord,
+                    via_coord=via_coord,
+                )
+                if routes:
+                    idx = preferred_index if 0 <= preferred_index < len(routes) else 0
+                    return routes[idx]
+            except Exception as exc:
+                logger.warning("Adapter route fetch failed: %s", exc)
+
+        if base_routes:
+            idx = preferred_index if 0 <= preferred_index < len(base_routes) else 0
+            return base_routes[idx]
 
         dist = haversine_distance(origin_coord, destination_coord)
         duration = int(round(dist / WALKING_SPEED_MPS))
@@ -77,6 +94,44 @@ class BaseRouteStrategy(ABC):
             duration_seconds=duration,
             steps=["Start walking", "Arrive at destination"],
         )
+
+    async def _collect_candidate_routes(
+        self,
+        base_routes: list[PedestrianRouteData] | None,
+        origin_coord: tuple[float, float],
+        destination_coord: tuple[float, float],
+        preferred_index: int = 0,
+        via_coord: tuple[float, float] | None = None,
+    ) -> list[PedestrianRouteData]:
+        candidates = list(base_routes) if base_routes else []
+
+        needs_via_fetch = via_coord is not None and not any(
+            distance_to_polyline(via_coord, r.polyline) <= 80.0
+            for r in candidates
+        )
+        if needs_via_fetch:
+            try:
+                via_routes = await self._adapter.get_pedestrian_route(
+                    origin_coord=origin_coord,
+                    destination_coord=destination_coord,
+                    via_coord=via_coord,
+                )
+                if via_routes:
+                    candidates.extend(via_routes)
+            except Exception as exc:
+                logger.warning("Adapter via-route fetch failed: %s", exc)
+
+        if candidates:
+            return candidates
+
+        fallback = await self._get_base_route(
+            base_routes,
+            origin_coord,
+            destination_coord,
+            preferred_index=preferred_index,
+            via_coord=via_coord,
+        )
+        return [fallback]
 
     def _find_corridor_waypoint(
         self,
@@ -102,50 +157,166 @@ class BaseRouteStrategy(ABC):
         if corridor_candidates:
             corridor_candidates.sort(key=lambda x: x[1])
             return corridor_candidates[0][0].start_coordinates
-        return segments[0].start_coordinates
+        return None
+
+    def _project_onto_polyline(
+        self,
+        point: tuple[float, float],
+        polyline: list[list[float]],
+    ) -> tuple[float, float]:
+        if not polyline:
+            return 0.0, float("inf")
+        if len(polyline) == 1:
+            return 0.0, haversine_distance(point, (polyline[0][0], polyline[0][1]))
+
+        best_dist = float("inf")
+        best_arc = 0.0
+        cumulative = 0.0
+
+        for i in range(len(polyline) - 1):
+            a = (polyline[i][0], polyline[i][1])
+            b = (polyline[i + 1][0], polyline[i + 1][1])
+            edge_len = haversine_distance(a, b)
+
+            mid_lat_rad = math.radians((a[0] + b[0]) / 2.0)
+            deg_lat = 111320.0
+            deg_lng = 111320.0 * math.cos(mid_lat_rad)
+
+            dx = (b[1] - a[1]) * deg_lng
+            dy = (b[0] - a[0]) * deg_lat
+            len_sq = dx * dx + dy * dy
+
+            if len_sq <= 1e-6:
+                t = 0.0
+                proj = a
+            else:
+                px = (point[1] - a[1]) * deg_lng
+                py = (point[0] - a[0]) * deg_lat
+                t = float(clamp((px * dx + py * dy) / len_sq, 0.0, 1.0))
+                proj = (a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1]))
+
+            dist = haversine_distance(point, proj)
+            if dist < best_dist:
+                best_dist = dist
+                best_arc = cumulative + t * edge_len
+
+            cumulative += edge_len
+
+        return best_arc, best_dist
 
     def _find_corridor_segments(
         self,
         polyline: list[list[float]],
         candidate_segments: list[MapSegmentModel],
-        buffer_meters: float = 80.0,
+        buffer_meters: float = DIRECT_BUFFER_METRES,
     ) -> list[MapSegmentModel]:
-        if not candidate_segments or not polyline:
+        return self._resolve_corridor_segments(
+            polyline,
+            candidate_segments,
+            preferred_segments=None,
+            buffer_meters=buffer_meters,
+        )
+
+    def _resolve_corridor_segments(
+        self,
+        polyline: list[list[float]],
+        all_segments: list[MapSegmentModel],
+        preferred_segments: list[MapSegmentModel] | None = None,
+        buffer_meters: float = VARIANT_BUFFER_METRES,
+    ) -> list[MapSegmentModel]:
+        if not all_segments or not polyline:
             return []
 
-        deg_threshold = buffer_meters / 111000.0
-        corridor: list[MapSegmentModel] = []
+        pref_ids = (
+            {s.segment_id for s in preferred_segments}
+            if preferred_segments is not None
+            else set()
+        )
 
-        for segment in candidate_segments:
-            s_lat, s_lng = segment.start_coordinates
-            e_lat, e_lng = segment.end_coordinates
+        candidates: list[tuple[int, float, float, float, MapSegmentModel]] = []
+        for seg in all_segments:
+            arc_s, dist_s = self._project_onto_polyline(seg.start_coordinates, polyline)
+            if dist_s > buffer_meters:
+                continue
+            arc_e, dist_e = self._project_onto_polyline(seg.end_coordinates, polyline)
+            if dist_e > buffer_meters:
+                continue
 
-            # Fast bounding box rejection against polyline vertices
-            near_start = False
-            near_end = False
+            span_start = min(arc_s, arc_e)
+            span_end = max(arc_s, arc_e)
+            span_len = span_end - span_start
+            seg_len = haversine_distance(seg.start_coordinates, seg.end_coordinates)
+            if seg_len > 5.0 and span_len < 0.3 * seg_len:
+                continue
 
-            for pt in polyline:
-                if (
-                    abs(s_lat - pt[0]) <= deg_threshold
-                    and abs(s_lng - pt[1]) <= deg_threshold
-                ):
-                    if haversine_distance((s_lat, s_lng), (pt[0], pt[1])) <= buffer_meters:
-                        near_start = True
-                        break
+            priority = 0 if seg.segment_id in pref_ids else 1
+            avg_dist = (dist_s + dist_e) / 2.0
+            candidates.append((priority, avg_dist, span_start, span_end, seg))
 
-            for pt in polyline:
-                if (
-                    abs(e_lat - pt[0]) <= deg_threshold
-                    and abs(e_lng - pt[1]) <= deg_threshold
-                ):
-                    if haversine_distance((e_lat, e_lng), (pt[0], pt[1])) <= buffer_meters:
-                        near_end = True
-                        break
+        candidates.sort(key=lambda item: (item[0], item[1]))
 
-            if near_start or near_end:
-                corridor.append(segment)
+        kept_intervals: list[tuple[float, float]] = []
+        resolved: list[tuple[float, MapSegmentModel]] = []
 
-        return corridor
+        for _, _, s_start, s_end, seg in candidates:
+            span = s_end - s_start
+            if span > 1e-3:
+                covered = sum(
+                    max(0.0, min(s_end, k_end) - max(s_start, k_start))
+                    for k_start, k_end in kept_intervals
+                )
+                if covered / span > 0.5:
+                    continue
+                kept_intervals.append((s_start, s_end))
+                kept_intervals.sort()
+                merged: list[tuple[float, float]] = []
+                for iv_s, iv_e in kept_intervals:
+                    if merged and iv_s <= merged[-1][1]:
+                        merged[-1] = (merged[-1][0], max(merged[-1][1], iv_e))
+                    else:
+                        merged.append((iv_s, iv_e))
+                kept_intervals = merged
+
+            resolved.append((s_start, seg))
+
+        resolved.sort(key=lambda item: item[0])
+        return [seg for _, seg in resolved]
+
+    def _compute_route_metrics(
+        self,
+        segments: list[MapSegmentModel],
+        total_distance: float,
+    ) -> tuple[float, int]:
+        stair_count = sum(s.stair_count for s in segments)
+        if total_distance <= 0:
+            return 0.0, stair_count
+
+        sheltered_dist = sum(
+            haversine_distance(s.start_coordinates, s.end_coordinates)
+            for s in segments
+            if s.is_sheltered
+        )
+        sheltered_pct = round(
+            clamp(100.0 * sheltered_dist / total_distance, 0.0, 100.0), 2
+        )
+        return sheltered_pct, stair_count
+
+    def _build_steps(
+        self,
+        origin_name: str,
+        destination_name: str,
+        base_steps: list[str],
+        fallback_steps: list[str],
+    ) -> list[str]:
+        steps = [f"Walk from {origin_name}"]
+        intermediate = [
+            s
+            for s in base_steps
+            if s not in steps and "Arrive at" not in s and s != "Start walking"
+        ]
+        steps.extend(intermediate if intermediate else fallback_steps)
+        steps.append(f"Arrive at {destination_name}")
+        return steps
 
 
 class RouteFactory:
@@ -184,33 +355,20 @@ class DirectRouteStrategy(BaseRouteStrategy):
         segments: list[MapSegmentModel] | None = None,
     ) -> RouteModel:
         all_segments = candidate_segments if candidate_segments is not None else (segments or [])
-        base_route = await self._get_base_route(base_routes, origin_coord, destination_coord, 0)
+        if base_routes:
+            base_route = min(base_routes, key=lambda r: r.distance_meters)
+        else:
+            base_route = await self._get_base_route(
+                base_routes, origin_coord, destination_coord, 0
+            )
         corridor = self._find_corridor_segments(base_route.polyline, all_segments)
 
-        stair_count = sum(s.stair_count for s in corridor)
-        sheltered_dist = sum(
-            haversine_distance(s.start_coordinates, s.end_coordinates)
-            for s in corridor
-            if s.is_sheltered
+        sheltered_pct, stair_count = self._compute_route_metrics(
+            corridor, base_route.distance_meters
         )
-        sheltered_pct = (
-            round(
-                clamp(
-                    100.0 * sheltered_dist / base_route.distance_meters,
-                    0.0,
-                    100.0,
-                ),
-                2,
-            )
-            if base_route.distance_meters > 0
-            else 0.0
+        steps = self._build_steps(
+            origin_name, destination_name, base_route.steps, []
         )
-
-        steps = [f"Walk from {origin_name}"]
-        for s in base_route.steps:
-            if s not in steps and "Arrive at" not in s:
-                steps.append(s)
-        steps.append(f"Arrive at {destination_name}")
 
         return RouteModel.model_construct(
             user_id=user_id,
@@ -254,24 +412,44 @@ class MaxShelterRouteStrategy(BaseRouteStrategy):
             else None
         )
 
-        base_route = await self._get_base_route(
+        candidates = await self._collect_candidate_routes(
             base_routes,
             origin_coord,
             destination_coord,
             preferred_index=0,
             via_coord=shelter_wp,
         )
-        corridor = self._find_corridor_segments(
-            base_route.polyline, sheltered, buffer_meters=120.0
+        base_route = max(
+            candidates,
+            key=lambda r: self._compute_route_metrics(
+                self._resolve_corridor_segments(
+                    r.polyline,
+                    all_segments,
+                    sheltered,
+                    buffer_meters=VARIANT_BUFFER_METRES,
+                ),
+                r.distance_meters,
+            )[0],
         )
-        selected_segments = corridor if corridor else sheltered[:6]
 
-        steps = [
-            f"Walk from {origin_name}",
-            "Follow covered linkway concourse",
-            "Continue under sheltered canopy",
-            f"Arrive at {destination_name}",
-        ]
+        selected_segments = self._resolve_corridor_segments(
+            base_route.polyline,
+            all_segments,
+            sheltered,
+            buffer_meters=VARIANT_BUFFER_METRES,
+        )
+        sheltered_pct, stair_count = self._compute_route_metrics(
+            selected_segments, base_route.distance_meters
+        )
+        steps = self._build_steps(
+            origin_name,
+            destination_name,
+            base_route.steps,
+            [
+                "Follow covered linkway concourse",
+                "Continue under sheltered canopy",
+            ],
+        )
 
         return RouteModel.model_construct(
             user_id=user_id,
@@ -283,8 +461,8 @@ class MaxShelterRouteStrategy(BaseRouteStrategy):
             total_distance=round(base_route.distance_meters, 2),
             estimated_time=base_route.duration_seconds,
             match_score=0.0,
-            sheltered_percentage=90.0 if selected_segments else 0.0,
-            stair_count=0,
+            sheltered_percentage=sheltered_pct,
+            stair_count=stair_count,
             segment_ids=[s.segment_id for s in selected_segments],
             polyline=base_route.polyline,
             steps=steps,
@@ -315,24 +493,46 @@ class BarrierFreeRouteStrategy(BaseRouteStrategy):
             else None
         )
 
-        base_route = await self._get_base_route(
+        def _barrier_cost(r: PedestrianRouteData) -> tuple[int, int, float]:
+            segs = self._resolve_corridor_segments(
+                r.polyline,
+                all_segments,
+                barrier_free,
+                buffer_meters=VARIANT_BUFFER_METRES,
+            )
+            violations = sum(
+                1 for s in segs if not s.is_barrier_free or s.stair_count > 0
+            )
+            stairs = sum(s.stair_count for s in segs)
+            return violations, stairs, r.distance_meters
+
+        candidates = await self._collect_candidate_routes(
             base_routes,
             origin_coord,
             destination_coord,
             preferred_index=0,
             via_coord=ramp_wp,
         )
-        corridor = self._find_corridor_segments(
-            base_route.polyline, barrier_free, buffer_meters=100.0
-        )
-        selected_segments = corridor if corridor else barrier_free[:4]
+        base_route = min(candidates, key=_barrier_cost)
 
-        steps = [
-            f"Walk from {origin_name}",
-            "Follow barrier-free accessible ramp",
-            "Continue along step-free walkway",
-            f"Arrive at {destination_name}",
-        ]
+        selected_segments = self._resolve_corridor_segments(
+            base_route.polyline,
+            all_segments,
+            barrier_free,
+            buffer_meters=VARIANT_BUFFER_METRES,
+        )
+        sheltered_pct, stair_count = self._compute_route_metrics(
+            selected_segments, base_route.distance_meters
+        )
+        steps = self._build_steps(
+            origin_name,
+            destination_name,
+            base_route.steps,
+            [
+                "Follow barrier-free accessible ramp",
+                "Continue along step-free walkway",
+            ],
+        )
 
         return RouteModel.model_construct(
             user_id=user_id,
@@ -344,8 +544,8 @@ class BarrierFreeRouteStrategy(BaseRouteStrategy):
             total_distance=round(base_route.distance_meters, 2),
             estimated_time=base_route.duration_seconds,
             match_score=0.0,
-            sheltered_percentage=25.0,
-            stair_count=0,
+            sheltered_percentage=sheltered_pct,
+            stair_count=stair_count,
             segment_ids=[s.segment_id for s in selected_segments],
             polyline=base_route.polyline,
             steps=steps,
@@ -376,24 +576,42 @@ class LowEffortRouteStrategy(BaseRouteStrategy):
             else None
         )
 
-        base_route = await self._get_base_route(
+        def _effort_cost(r: PedestrianRouteData) -> tuple[int, float]:
+            segs = self._resolve_corridor_segments(
+                r.polyline,
+                all_segments,
+                flat,
+                buffer_meters=VARIANT_BUFFER_METRES,
+            )
+            return sum(s.stair_count for s in segs), r.distance_meters
+
+        candidates = await self._collect_candidate_routes(
             base_routes,
             origin_coord,
             destination_coord,
             preferred_index=0,
             via_coord=flat_wp,
         )
-        corridor = self._find_corridor_segments(
-            base_route.polyline, flat, buffer_meters=90.0
-        )
-        selected_segments = corridor if corridor else flat[:3]
+        base_route = min(candidates, key=_effort_cost)
 
-        steps = [
-            f"Walk from {origin_name}",
-            "Follow flat footpath avoiding stairs",
-            "Continue on gentle gradient",
-            f"Arrive at {destination_name}",
-        ]
+        selected_segments = self._resolve_corridor_segments(
+            base_route.polyline,
+            all_segments,
+            flat,
+            buffer_meters=VARIANT_BUFFER_METRES,
+        )
+        sheltered_pct, stair_count = self._compute_route_metrics(
+            selected_segments, base_route.distance_meters
+        )
+        steps = self._build_steps(
+            origin_name,
+            destination_name,
+            base_route.steps,
+            [
+                "Follow flat footpath avoiding stairs",
+                "Continue on gentle gradient",
+            ],
+        )
 
         return RouteModel.model_construct(
             user_id=user_id,
@@ -405,8 +623,8 @@ class LowEffortRouteStrategy(BaseRouteStrategy):
             total_distance=round(base_route.distance_meters, 2),
             estimated_time=base_route.duration_seconds,
             match_score=0.0,
-            sheltered_percentage=20.0,
-            stair_count=0,
+            sheltered_percentage=sheltered_pct,
+            stair_count=stair_count,
             segment_ids=[s.segment_id for s in selected_segments],
             polyline=base_route.polyline,
             steps=steps,
@@ -430,21 +648,50 @@ class WideQuietRouteStrategy(BaseRouteStrategy):
         segments: list[MapSegmentModel] | None = None,
     ) -> RouteModel:
         all_segments = candidate_segments if candidate_segments is not None else (segments or [])
-        base_route = await self._get_base_route(
-            base_routes, origin_coord, destination_coord, preferred_index=1
-        )
         high_conf = [s for s in all_segments if s.confidence_score >= 0.0]
-        corridor = self._find_corridor_segments(
-            base_route.polyline, high_conf, buffer_meters=100.0
-        )
-        selected_segments = corridor if corridor else high_conf[:4]
 
-        steps = [
-            f"Walk from {origin_name}",
-            "Follow wide park connector / nature path",
-            "Continue on quiet walkway",
-            f"Arrive at {destination_name}",
-        ]
+        def _avg_conf(r: PedestrianRouteData) -> float:
+            segs = self._resolve_corridor_segments(
+                r.polyline,
+                all_segments,
+                high_conf,
+                buffer_meters=VARIANT_BUFFER_METRES,
+            )
+            return (
+                sum(s.confidence_score for s in segs) / len(segs)
+                if segs
+                else 0.0
+            )
+
+        candidates = await self._collect_candidate_routes(
+            base_routes,
+            origin_coord,
+            destination_coord,
+            preferred_index=1,
+        )
+        base_route = max(
+            enumerate(candidates),
+            key=lambda item: (_avg_conf(item[1]), item[0] >= 1),
+        )[1]
+
+        selected_segments = self._resolve_corridor_segments(
+            base_route.polyline,
+            all_segments,
+            high_conf,
+            buffer_meters=VARIANT_BUFFER_METRES,
+        )
+        sheltered_pct, stair_count = self._compute_route_metrics(
+            selected_segments, base_route.distance_meters
+        )
+        steps = self._build_steps(
+            origin_name,
+            destination_name,
+            base_route.steps,
+            [
+                "Follow wide park connector / nature path",
+                "Continue on quiet walkway",
+            ],
+        )
 
         return RouteModel.model_construct(
             user_id=user_id,
@@ -456,8 +703,8 @@ class WideQuietRouteStrategy(BaseRouteStrategy):
             total_distance=round(base_route.distance_meters, 2),
             estimated_time=base_route.duration_seconds,
             match_score=0.0,
-            sheltered_percentage=15.0,
-            stair_count=0,
+            sheltered_percentage=sheltered_pct,
+            stair_count=stair_count,
             segment_ids=[s.segment_id for s in selected_segments],
             polyline=base_route.polyline,
             steps=steps,

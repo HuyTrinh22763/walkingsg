@@ -20,7 +20,7 @@ export default function ProfileDeclarationScreen({ navigation }: any) {
     setIsSaving(true);
     try {
       await saveProfile({ fullName, isDeclared: true });
-      Alert.alert('Saved', 'Personal declaration confirmed.', [
+      Alert.alert('Profile saved successfully', 'Personal declaration confirmed.', [
         { text: 'OK', onPress: () => navigation.goBack() },
       ]);
     } catch (error) {

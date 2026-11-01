@@ -19,7 +19,7 @@ from src.services.adapters.pedestrian_routing_adapter import (
     PedestrianRoutingAdapter,
 )
 from src.services.route_service import RouteService
-from src.utils.index import utc_now
+from src.utils.index import haversine_distance, utc_now
 
 MOCK_BASE_ROUTES = [
     PedestrianRouteData(
@@ -307,3 +307,90 @@ async def test_generate_routes_with_hazards_avoids_polygons(route_service_deps):
     assert call_kwargs["avoid_polygons"] is not None
     assert len(call_kwargs["avoid_polygons"]) == 1
     assert result.starred_route is not None
+def test_select_weights_matches_srs_spec(route_service_deps):
+    service = route_service_deps["service"]
+
+    # 1. Standard young user, Medium UV
+    p_std = ProfileModel.model_construct(
+        age=30,
+        mobility_needs=MobilityNeeds.NONE,
+        heat_uv_sensitivity=HeatUvSensitivity.MEDIUM,
+    )
+    w_std = service._select_weights(p_std)
+    # raw: eff 0.25, shelter 0.15, effort 0.10, conf 0.15 -> sum 0.65
+    assert pytest.approx(sum(w_std.values())) == 1.0
+    assert pytest.approx(w_std["efficiency"], 0.001) == 0.25 / 0.65
+    assert pytest.approx(w_std["shelter"], 0.001) == 0.15 / 0.65
+    assert pytest.approx(w_std["effort"], 0.001) == 0.10 / 0.65
+    assert pytest.approx(w_std["confidence"], 0.001) == 0.15 / 0.65
+
+    # 2. Senior (age >= 65), High UV
+    p_senior = ProfileModel.model_construct(
+        age=68,
+        mobility_needs=MobilityNeeds.NONE,
+        heat_uv_sensitivity=HeatUvSensitivity.HIGH,
+    )
+    w_senior = service._select_weights(p_senior)
+    # raw: eff 0.25, shelter 0.20, effort 0.20, conf 0.15 -> sum 0.80
+    assert pytest.approx(sum(w_senior.values())) == 1.0
+    assert pytest.approx(w_senior["efficiency"], 0.001) == 0.25 / 0.80
+    assert pytest.approx(w_senior["shelter"], 0.001) == 0.20 / 0.80
+    assert pytest.approx(w_senior["effort"], 0.001) == 0.20 / 0.80
+    assert pytest.approx(w_senior["confidence"], 0.001) == 0.15 / 0.80
+
+    # 3. Mobility Aid user, Low UV
+    p_aid = ProfileModel.model_construct(
+        age=40,
+        mobility_needs=MobilityNeeds.MOBILITY_AID,
+        heat_uv_sensitivity=HeatUvSensitivity.LOW,
+    )
+    w_aid = service._select_weights(p_aid)
+    # raw: eff 0.25, shelter 0.10, effort 0.20, conf 0.15 -> sum 0.70
+    assert pytest.approx(sum(w_aid.values())) == 1.0
+    assert pytest.approx(w_aid["efficiency"], 0.001) == 0.25 / 0.70
+    assert pytest.approx(w_aid["shelter"], 0.001) == 0.10 / 0.70
+    assert pytest.approx(w_aid["effort"], 0.001) == 0.20 / 0.70
+    assert pytest.approx(w_aid["confidence"], 0.001) == 0.15 / 0.70
+
+
+def test_match_score_exact_calculation(route_service_deps):
+    service = route_service_deps["service"]
+
+    # Route: 500m direct, 500m total (Seff = 100), 80% shelter (Sshelter = 80), 3 stairs (Seffort = 70)
+    # 1 segment with confidence_score = 0.0 (Sconf = 50.0)
+    route = RouteModel.model_construct(
+        user_id=PydanticObjectId(),
+        route_type=RouteType.DIRECT,
+        origin_name="Start",
+        origin_coordinates=(1.3500, 103.6800),
+        destination_name="End",
+        destination_coordinates=(1.3500, 103.6845),
+        total_distance=haversine_distance((1.3500, 103.6800), (1.3500, 103.6845)),
+        estimated_time=400,
+        match_score=0.0,
+        sheltered_percentage=80.0,
+        stair_count=3,
+        segment_ids=["seg-test"],
+        polyline=[[1.3500, 103.6800], [1.3500, 103.6845]],
+        steps=[],
+    )
+
+    seg = MapSegmentModel.model_construct(
+        segment_id="seg-test",
+        start_coordinates=(1.3500, 103.6800),
+        end_coordinates=(1.3500, 103.6845),
+        is_sheltered=True,
+        stair_count=3,
+        is_barrier_free=True,
+        confidence_score=0.0,
+    )
+
+    profile = ProfileModel.model_construct(
+        age=70,  # weffort = 0.20
+        mobility_needs=MobilityNeeds.NONE,
+        heat_uv_sensitivity=HeatUvSensitivity.HIGH,  # wshelter = 0.20
+    )
+
+    score = service.calculate_match_score(route, profile, segments=[seg])
+    # Expected: 0.3125 * 100 + 0.25 * 80 + 0.25 * 70 + 0.1875 * 50 = 31.25 + 20 + 17.5 + 9.375 = 78.125 -> 78.12
+    assert score in (78.12, 78.13)
