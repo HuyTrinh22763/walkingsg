@@ -3,6 +3,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import LoginScreen from '../screens/auth/LoginScreen';
 import RegisterScreen from '../screens/auth/RegisterScreen';
 import ResetPasswordScreen from '../screens/auth/ResetPasswordScreen';
+import OnboardingScreen from '../screens/auth/OnboardingScreen';
 import MapRejectedScreen from '../screens/map/MapRejectedScreen';
 import RouteExpandedScreen from '../screens/routes/RouteExpandedScreen';
 import NavActiveScreen from '../screens/navigation/NavActiveScreen';
@@ -30,6 +31,7 @@ export function AppNavigator() {
       <Stack.Screen name="Login" component={LoginScreen} />
       <Stack.Screen name="Register" component={RegisterScreen} />
       <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
+      <Stack.Screen name="Onboarding" component={OnboardingScreen} />
 
       {/* Main Bottom Tabs */}
       <Stack.Screen name="MainTabs" component={TabNavigator} />
