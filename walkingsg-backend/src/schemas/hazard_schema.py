@@ -12,6 +12,7 @@ class HazardReportRequest(BaseRequest):
     hazard_type: HazardType
     latitude: float = Field(ge=-90.0, le=90.0)
     longitude: float = Field(ge=-180.0, le=180.0)
+    description: str = Field(default="", max_length=500)
 
 
 class NearbyHazardsQuery(BaseRequest):
@@ -25,6 +26,7 @@ class HazardOut(BaseResponse):
     segment_id: str
     latitude: float
     longitude: float
+    description: str = ""
     report_timestamp: datetime
 
     @model_validator(mode="before")

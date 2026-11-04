@@ -41,6 +41,7 @@ class HazardService:
             reported_by_user_id=user_id,
             segment_id=segment.segment_id,
             hazard_type=payload.hazard_type,
+            description=payload.description.strip(),
             hazard_status=HazardStatus.ACTIVE,
             location=HazardLocation(
                 coordinates=(payload.longitude, payload.latitude)
