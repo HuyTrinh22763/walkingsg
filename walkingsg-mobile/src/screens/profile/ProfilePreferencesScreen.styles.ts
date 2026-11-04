@@ -53,6 +53,7 @@ export const styles = StyleSheet.create({
   profilePreferences_innerGridRow: {
     flexDirection: 'row',
     gap: 10,
+    alignItems: 'flex-start',
   },
   profilePreferences_innerFieldHalf: {
     flex: 1,
@@ -87,10 +88,54 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
+  profilePreferences_innerPickerBtn_open: {
+    borderColor: ThemeColors.canopy,
+  },
   profilePreferences_innerPickerBtnText: {
     fontSize: 14,
     fontWeight: '700',
     color: ThemeColors.ink,
+  },
+  profilePreferences_innerDropdownMenu: {
+    backgroundColor: ThemeColors.card,
+    borderWidth: 1.5,
+    borderColor: ThemeColors.lineStrong,
+    borderRadius: 10,
+    overflow: 'hidden',
+    shadowColor: '#221f18',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  profilePreferences_innerDropdownItem: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: ThemeColors.line,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  profilePreferences_innerDropdownItem_selected: {
+    backgroundColor: ThemeColors.canopyTint,
+  },
+  profilePreferences_innerDropdownItem_last: {
+    borderBottomWidth: 0,
+  },
+  profilePreferences_innerDropdownItemText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: ThemeColors.ink,
+  },
+  profilePreferences_innerDropdownItemText_selected: {
+    fontWeight: '700',
+    color: ThemeColors.canopyInk,
+  },
+  profilePreferences_innerDropdownCheck: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: ThemeColors.canopy,
   },
   profilePreferences_innerSliderBox: {
     backgroundColor: ThemeColors.card,
