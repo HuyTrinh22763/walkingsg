@@ -406,7 +406,7 @@ export function AppProvider({ children }: { children?: ReactNode }): ReactElemen
     );
 
     setSelectedRouteDetail(newRouteDetail);
-    setSelectedRoute(toRouteCard(newRouteDetail));
+    setSelectedRouteState(toRouteCard(newRouteDetail));
     return newRouteDetail;
   }, [auth.accessToken, auth.userId, activeNavSession]);
 
