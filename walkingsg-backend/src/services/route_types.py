@@ -28,6 +28,12 @@ VARIANT_BUFFER_METRES = 60.0
 class BaseRouteStrategy(ABC):
     route_type: ClassVar[RouteType]
     _adapter: PedestrianRoutingAdapter = PedestrianRoutingAdapter()
+    _via_route_cache: ClassVar[
+        dict[
+            tuple[float, float, float, float, float, float],
+            list[PedestrianRouteData],
+        ]
+    ] = {}
 
     @abstractmethod
     # generate_route interface for 5-variant routes
@@ -47,6 +53,7 @@ class BaseRouteStrategy(ABC):
         base_routes: list[PedestrianRouteData] | None = None,
         candidate_segments: list[MapSegmentModel] | None = None,
         segments: list[MapSegmentModel] | None = None,
+        allow_via_fetch: bool = True,
     ) -> RouteModel: ...
 
     async def _get_base_route(
@@ -102,24 +109,44 @@ class BaseRouteStrategy(ABC):
         destination_coord: tuple[float, float],
         preferred_index: int = 0,
         via_coord: tuple[float, float] | None = None,
+        allow_via_fetch: bool = True,
     ) -> list[PedestrianRouteData]:
         candidates = list(base_routes) if base_routes else []
 
-        needs_via_fetch = via_coord is not None and not any(
-            distance_to_polyline(via_coord, r.polyline) <= 80.0
-            for r in candidates
+        needs_via_fetch = (
+            allow_via_fetch
+            and via_coord is not None
+            and not any(
+                distance_to_polyline(via_coord, r.polyline) <= 80.0
+                for r in candidates
+            )
         )
-        if needs_via_fetch:
-            try:
-                via_routes = await self._adapter.get_pedestrian_route(
-                    origin_coord=origin_coord,
-                    destination_coord=destination_coord,
-                    via_coord=via_coord,
-                )
-                if via_routes:
-                    candidates.extend(via_routes)
-            except Exception as exc:
-                logger.warning("Adapter via-route fetch failed: %s", exc)
+        if needs_via_fetch and via_coord is not None:
+            cache_key = (
+                round(origin_coord[0], 5),
+                round(origin_coord[1], 5),
+                round(destination_coord[0], 5),
+                round(destination_coord[1], 5),
+                round(via_coord[0], 5),
+                round(via_coord[1], 5),
+            )
+            cached = self._via_route_cache.get(cache_key)
+            if cached is not None:
+                candidates.extend(cached)
+            else:
+                try:
+                    via_routes = await self._adapter.get_pedestrian_route(
+                        origin_coord=origin_coord,
+                        destination_coord=destination_coord,
+                        via_coord=via_coord,
+                    )
+                    if via_routes:
+                        if len(self._via_route_cache) >= 128:
+                            self._via_route_cache.clear()
+                        self._via_route_cache[cache_key] = via_routes
+                        candidates.extend(via_routes)
+                except Exception as exc:
+                    logger.warning("Adapter via-route fetch failed: %s", exc)
 
         if candidates:
             return candidates
@@ -353,6 +380,7 @@ class DirectRouteStrategy(BaseRouteStrategy):
         base_routes: list[PedestrianRouteData] | None = None,
         candidate_segments: list[MapSegmentModel] | None = None,
         segments: list[MapSegmentModel] | None = None,
+        allow_via_fetch: bool = True,
     ) -> RouteModel:
         all_segments = candidate_segments if candidate_segments is not None else (segments or [])
         if base_routes:
@@ -403,6 +431,7 @@ class MaxShelterRouteStrategy(BaseRouteStrategy):
         base_routes: list[PedestrianRouteData] | None = None,
         candidate_segments: list[MapSegmentModel] | None = None,
         segments: list[MapSegmentModel] | None = None,
+        allow_via_fetch: bool = True,
     ) -> RouteModel:
         all_segments = candidate_segments if candidate_segments is not None else (segments or [])
         sheltered = [s for s in all_segments if s.is_sheltered]
@@ -418,6 +447,7 @@ class MaxShelterRouteStrategy(BaseRouteStrategy):
             destination_coord,
             preferred_index=0,
             via_coord=shelter_wp,
+            allow_via_fetch=allow_via_fetch,
         )
         base_route = max(
             candidates,
@@ -484,6 +514,7 @@ class BarrierFreeRouteStrategy(BaseRouteStrategy):
         base_routes: list[PedestrianRouteData] | None = None,
         candidate_segments: list[MapSegmentModel] | None = None,
         segments: list[MapSegmentModel] | None = None,
+        allow_via_fetch: bool = True,
     ) -> RouteModel:
         all_segments = candidate_segments if candidate_segments is not None else (segments or [])
         barrier_free = [s for s in all_segments if s.is_barrier_free and s.stair_count == 0]
@@ -512,6 +543,7 @@ class BarrierFreeRouteStrategy(BaseRouteStrategy):
             destination_coord,
             preferred_index=0,
             via_coord=ramp_wp,
+            allow_via_fetch=allow_via_fetch,
         )
         base_route = min(candidates, key=_barrier_cost)
 
@@ -567,6 +599,7 @@ class LowEffortRouteStrategy(BaseRouteStrategy):
         base_routes: list[PedestrianRouteData] | None = None,
         candidate_segments: list[MapSegmentModel] | None = None,
         segments: list[MapSegmentModel] | None = None,
+        allow_via_fetch: bool = True,
     ) -> RouteModel:
         all_segments = candidate_segments if candidate_segments is not None else (segments or [])
         flat = [s for s in all_segments if s.stair_count == 0]
@@ -591,6 +624,7 @@ class LowEffortRouteStrategy(BaseRouteStrategy):
             destination_coord,
             preferred_index=0,
             via_coord=flat_wp,
+            allow_via_fetch=allow_via_fetch,
         )
         base_route = min(candidates, key=_effort_cost)
 
@@ -646,6 +680,7 @@ class WideQuietRouteStrategy(BaseRouteStrategy):
         base_routes: list[PedestrianRouteData] | None = None,
         candidate_segments: list[MapSegmentModel] | None = None,
         segments: list[MapSegmentModel] | None = None,
+        allow_via_fetch: bool = True,
     ) -> RouteModel:
         all_segments = candidate_segments if candidate_segments is not None else (segments or [])
         high_conf = [s for s in all_segments if s.confidence_score >= 0.0]
@@ -668,6 +703,7 @@ class WideQuietRouteStrategy(BaseRouteStrategy):
             origin_coord,
             destination_coord,
             preferred_index=1,
+            allow_via_fetch=allow_via_fetch,
         )
         base_route = max(
             enumerate(candidates),

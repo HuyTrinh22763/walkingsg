@@ -256,6 +256,7 @@ class RouteService:
         except Exception as exc:
             logger.warning("Routing adapter base route error: %s", exc)
 
+        allow_via_fetch = not bool(avoid_polygons)
         routes: list[RouteModel] = []
         for route_type in RouteType:
             strategy = RouteFactory.get(route_type)()
@@ -268,6 +269,7 @@ class RouteService:
                 base_routes=base_routes,
                 candidate_segments=candidates,
                 segments=candidates,
+                allow_via_fetch=allow_via_fetch,
             )
             route_segments = [
                 segments_by_id[sid]
