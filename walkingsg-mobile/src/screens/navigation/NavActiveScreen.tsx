@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { View, Text, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
-import OneMapView, { MapPin, LatLng } from '../../components/OneMapView';
+import OneMapView, { MapPin, LatLng, OneMapViewHandle } from '../../components/OneMapView';
 import { TurnLeftIcon, HazardAlertIcon } from '../../components/SvgIcons';
 import { useApp } from '../../context/AppContext';
 import { hazardService } from '../../services/hazardService';
@@ -12,6 +12,7 @@ import {
   calculateDistanceAlongRoute,
   findHazardsOnRoute,
   formatDistanceAhead,
+  haversineDistance,
 } from '../../utils/routeUtils';
 import { styles } from './NavActiveScreen.styles';
 
@@ -43,6 +44,8 @@ export default function NavActiveScreen({ navigation }: any) {
       : DEFAULT_CENTER;
 
   const [currentCoord, setCurrentCoord] = useState<LatLng>(initialCoord);
+  const [isCenterView, setIsCenterView] = useState<boolean>(true);
+  const mapRef = useRef<OneMapViewHandle | null>(null);
   const trackRef = useRef(trackNavPosition);
   const inFlightRef = useRef(false);
   const pendingRef = useRef<{ coord: [number, number]; speedKmh: number } | null>(null);
@@ -52,14 +55,50 @@ export default function NavActiveScreen({ navigation }: any) {
     if (polyline.length >= 2) {
       return Math.round(calculateBearing(polyline[0], polyline[1]));
     }
-    return null;
+    return 0;
   }, [polyline]);
+
+  // Steady bearing of the current walk segment ahead (map aligns to the walk, NOT spinning with user's compass)
+  const walkBearing = useMemo(() => {
+    if (polyline.length < 2) return initialRouteBearing;
+    let bestIdx = 0;
+    let minDist = Infinity;
+    const userPt: [number, number] = [currentCoord.lat, currentCoord.lng];
+    for (let i = 0; i < polyline.length - 1; i++) {
+      const d = haversineDistance(userPt, polyline[i]);
+      if (d < minDist) {
+        minDist = d;
+        bestIdx = i;
+      }
+    }
+    const nextPt = polyline[Math.min(bestIdx + 1, polyline.length - 1)];
+    if (haversineDistance(polyline[bestIdx], nextPt) > 0.5) {
+      return Math.round(calculateBearing(polyline[bestIdx], nextPt));
+    }
+    return initialRouteBearing;
+  }, [currentCoord.lat, currentCoord.lng, polyline, initialRouteBearing]);
 
   const [userHeading, setUserHeading] = useState<number | null>(initialRouteBearing);
   const hasCompassRef = useRef(false);
   const lastHeadingRef = useRef<number | null>(null);
 
-  // Real device hardware compass heading subscription
+  useEffect(() => {
+    if (!hasCompassRef.current) {
+      setUserHeading(walkBearing);
+    }
+  }, [walkBearing]);
+
+  const handleToggleCameraView = () => {
+    if (isCenterView) {
+      setIsCenterView(false);
+      mapRef.current?.spreadOutView();
+    } else {
+      setIsCenterView(true);
+      mapRef.current?.recenterPov(currentCoord, walkBearing);
+    }
+  };
+
+  // Real device hardware compass heading subscription (rotates only user's view cone, not the map)
   useEffect(() => {
     if (gpsStatus !== 'granted' || (!isNavigating && !activeNavSession)) {
       return;
@@ -336,11 +375,14 @@ export default function NavActiveScreen({ navigation }: any) {
       <View style={styles.navActive_innerContainer}>
         {/* Live OneMap Navigation Map */}
         <OneMapView
-          center={currentCoord}
-          zoom={16}
+          mapRef={mapRef}
+          center={isCenterView ? currentCoord : undefined}
+          zoom={18}
           routeCoordinates={routeCoords}
           pins={pins}
           userHeading={userHeading}
+          walkBearing={walkBearing}
+          povMode={isCenterView}
         />
 
         {/* Top Guidance HUD */}
@@ -408,6 +450,27 @@ export default function NavActiveScreen({ navigation }: any) {
                 : nearbyHazards.length > 0
                 ? `${nearbyHazards.length} alert(s) reported nearby (Tap to view)`
                 : 'No alerts nearby · Route clear'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Floating Camera Toggle: "Spread whole view" (default in Center View) / "Back to center view" */}
+        <View style={styles.navActive_innerCameraControlsRow}>
+          <TouchableOpacity
+            style={[
+              styles.navActive_innerPovToggleBtn,
+              !isCenterView && styles.navActive_innerPovToggleBtn_active,
+            ]}
+            onPress={handleToggleCameraView}
+            activeOpacity={0.85}
+          >
+            <Text
+              style={[
+                styles.navActive_innerPovToggleText,
+                !isCenterView && styles.navActive_innerPovToggleText_active,
+              ]}
+            >
+              {isCenterView ? 'Spread whole view' : 'Back to center view'}
             </Text>
           </TouchableOpacity>
         </View>
