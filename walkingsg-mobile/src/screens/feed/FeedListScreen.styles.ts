@@ -45,7 +45,10 @@ export const styles = StyleSheet.create({
     padding: 14,
     borderBottomWidth: 1,
     borderBottomColor: ThemeColors.line,
-    gap: 6,
+    gap: 8,
+  },
+  feedList_innerEntry_expanded: {
+    backgroundColor: ThemeColors.paper2,
   },
   feedList_innerEntry_last: {
     borderBottomWidth: 0,
@@ -66,9 +69,34 @@ export const styles = StyleSheet.create({
     fontWeight: '700',
     color: ThemeColors.ink,
   },
+  feedList_innerEntryRightBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
   feedList_innerEntryTime: {
     fontSize: 11,
     color: ThemeColors.inkFaint,
+    fontWeight: '600',
+  },
+  feedList_innerEntryChevron: {
+    fontSize: 10,
+    color: ThemeColors.inkSoft,
+  },
+  feedList_innerEntryDetails: {
+    borderTopWidth: 1,
+    borderTopColor: ThemeColors.line,
+    paddingTop: 10,
+    gap: 6,
+  },
+  feedList_innerEntryDesc: {
+    fontSize: 13,
+    color: ThemeColors.ink,
+    lineHeight: 19,
+  },
+  feedList_innerEntryTimestamp: {
+    fontSize: 11,
+    color: ThemeColors.inkSoft,
     fontWeight: '600',
   },
   feedList_innerButtonReport: {

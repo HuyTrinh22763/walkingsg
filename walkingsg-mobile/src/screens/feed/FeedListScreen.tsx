@@ -1,5 +1,14 @@
 import React, { useCallback, useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, RefreshControl } from 'react-native';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  ScrollView,
+  RefreshControl,
+  LayoutAnimation,
+  Platform,
+  UIManager,
+} from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LiftIcon, PondingIcon, HazardAlertIcon } from '../../components/SvgIcons';
@@ -8,6 +17,7 @@ import { hazardService } from '../../services/hazardService';
 import {
   formatHazardIcon,
   formatHazardTimeAgo,
+  formatHazardTimestamp,
   formatHazardTitle,
   type HazardIconName,
   type HazardOut,
@@ -15,13 +25,26 @@ import {
 import { ThemeColors } from '../../constants/theme';
 import { styles } from './FeedListScreen.styles';
 
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
 export default function FeedListScreen({ navigation }: any) {
   // Section Feed List Logic
   const { origin } = useApp();
   const [hazards, setHazards] = useState<HazardOut[]>([]);
+  const [expandedIds, setExpandedIds] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const toggleExpandHazard = (hazardId: string) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExpandedIds(prev => ({
+      ...prev,
+      [hazardId]: !prev[hazardId],
+    }));
+  };
 
   const fetchHazards = useCallback(async (isPull = false, silent = false) => {
     if (!origin) {
@@ -100,7 +123,7 @@ export default function FeedListScreen({ navigation }: any) {
         {/* Section Feed List */}
         <View style={styles.feedList_innerHeader}>
           <Text style={styles.feedList_innerTitle}>Local Feed</Text>
-          <Text style={styles.feedList_innerSub}>Hazards near you.</Text>
+          <Text style={styles.feedList_innerSub}>Hazards near you. Tap any card to view details.</Text>
         </View>
 
         {statusMessage ? (
@@ -113,16 +136,41 @@ export default function FeedListScreen({ navigation }: any) {
           <View style={styles.feedList_innerEntries}>
             {hazards.map((hazard, idx) => {
               const isLast = idx === hazards.length - 1;
+              const isExpanded = Boolean(expandedIds[hazard.hazard_id]);
+              const descText = hazard.description?.trim()
+                ? hazard.description.trim()
+                : 'No additional description provided by reporter.';
               return (
-                <View key={hazard.hazard_id} style={[styles.feedList_innerEntry, isLast && styles.feedList_innerEntry_last]}>
+                <TouchableOpacity
+                  key={hazard.hazard_id}
+                  style={[
+                    styles.feedList_innerEntry,
+                    isExpanded && styles.feedList_innerEntry_expanded,
+                    isLast && styles.feedList_innerEntry_last,
+                  ]}
+                  onPress={() => toggleExpandHazard(hazard.hazard_id)}
+                  activeOpacity={0.8}
+                >
                   <View style={styles.feedList_innerEntryHead}>
                     <View style={styles.feedList_innerEntryTitleBox}>
                       {renderIcon(formatHazardIcon(hazard.hazard_type))}
                       <Text style={styles.feedList_innerEntryTitle}>{formatHazardTitle(hazard.hazard_type)}</Text>
                     </View>
-                    <Text style={styles.feedList_innerEntryTime}>{formatHazardTimeAgo(hazard.report_timestamp)}</Text>
+                    <View style={styles.feedList_innerEntryRightBox}>
+                      <Text style={styles.feedList_innerEntryTime}>{formatHazardTimeAgo(hazard.report_timestamp)}</Text>
+                      <Text style={styles.feedList_innerEntryChevron}>{isExpanded ? '▲' : '▼'}</Text>
+                    </View>
                   </View>
-                </View>
+
+                  {isExpanded && (
+                    <View style={styles.feedList_innerEntryDetails}>
+                      <Text style={styles.feedList_innerEntryDesc}>{descText}</Text>
+                      <Text style={styles.feedList_innerEntryTimestamp}>
+                        Reported at: {formatHazardTimestamp(hazard.report_timestamp)}
+                      </Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
               );
             })}
           </View>
