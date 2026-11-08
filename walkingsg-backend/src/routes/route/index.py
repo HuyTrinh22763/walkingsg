@@ -9,6 +9,7 @@ private_router = APIRouter(
 )
 
 private_router.post("/generate")(controller.generate_routes)
+private_router.get("/weather")(controller.get_weather)
 private_router.get("/{route_id}")(controller.find_route)
 
 router = APIRouter(tags=["route"])

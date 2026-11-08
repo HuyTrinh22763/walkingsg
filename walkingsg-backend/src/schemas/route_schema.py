@@ -1,8 +1,9 @@
 from typing import Any
 
-from pydantic import ConfigDict, field_validator
+from pydantic import ConfigDict, Field, field_validator
 
 from src.schemas.access_schema import BaseRequest, BaseResponse
+from src.services.adapters.weather_adapter import WeatherCondition
 from src.utils.index import validate_coordinates
 
 
@@ -11,6 +12,7 @@ class RouteSearchRequest(BaseRequest):
     destination_coord: tuple[float, float]
     origin_name: str = "Origin"
     destination_name: str = "Destination"
+    weather_override: WeatherCondition | None = None
 
     @field_validator("origin_coord")
     @classmethod
@@ -23,6 +25,22 @@ class RouteSearchRequest(BaseRequest):
         cls, value: tuple[float, float]
     ) -> tuple[float, float]:
         return validate_coordinates(value, "destination_coord")
+
+
+class WeatherQuery(BaseRequest):
+    latitude: float = Field(default=1.3521, ge=-90.0, le=90.0)
+    longitude: float = Field(default=103.8198, ge=-180.0, le=180.0)
+    weather_override: WeatherCondition | None = None
+
+
+class WeatherContextOut(BaseResponse):
+    condition: WeatherCondition
+    forecast_text: str
+    temperature_c: float
+    area_name: str
+    advisory_message: str
+    shelter_weight_pct: int
+    is_simulated: bool = False
 
 
 class RouteVariantSummary(BaseResponse):
@@ -45,6 +63,7 @@ class RouteVariantSummary(BaseResponse):
 class RouteSearchOut(BaseResponse):
     starred_route: RouteVariantSummary
     alternative_routes: list[RouteVariantSummary]
+    weather: WeatherContextOut | None = None
 
 
 class RouteDetailOut(RouteVariantSummary):
