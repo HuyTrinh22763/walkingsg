@@ -394,3 +394,97 @@ def test_match_score_exact_calculation(route_service_deps):
     score = service.calculate_match_score(route, profile, segments=[seg])
     # Expected: 0.3125 * 100 + 0.25 * 80 + 0.25 * 70 + 0.1875 * 50 = 31.25 + 20 + 17.5 + 9.375 = 78.125 -> 78.12
     assert score in (78.12, 78.13)
+
+
+@pytest.mark.asyncio
+async def test_weather_dynamic_weights_boost_sheltered_route_in_rain(route_service_deps):
+    from src.services.adapters.weather_adapter import WeatherAdapter, WeatherCondition
+
+    service = route_service_deps["service"]
+    profile = ProfileModel.model_construct(
+        age=30,
+        mobility_needs=MobilityNeeds.NONE,
+        heat_uv_sensitivity=HeatUvSensitivity.MEDIUM,
+    )
+
+    exposed_shortcut = RouteModel.model_construct(
+        user_id=PydanticObjectId(),
+        route_type=RouteType.DIRECT,
+        origin_name="Start",
+        origin_coordinates=(1.3500, 103.6800),
+        destination_name="End",
+        destination_coordinates=(1.3500, 103.6845),
+        total_distance=500.0,
+        estimated_time=400,
+        match_score=0.0,
+        sheltered_percentage=15.0,
+        stair_count=0,
+        segment_ids=[],
+        polyline=[[1.3500, 103.6800], [1.3500, 103.6845]],
+        steps=[],
+    )
+    sheltered_detour = RouteModel.model_construct(
+        user_id=PydanticObjectId(),
+        route_type=RouteType.MAX_SHELTER,
+        origin_name="Start",
+        origin_coordinates=(1.3500, 103.6800),
+        destination_name="End",
+        destination_coordinates=(1.3500, 103.6845),
+        total_distance=680.0,
+        estimated_time=540,
+        match_score=0.0,
+        sheltered_percentage=95.0,
+        stair_count=0,
+        segment_ids=[],
+        polyline=[[1.3500, 103.6800], [1.3510, 103.6820], [1.3500, 103.6845]],
+        steps=[],
+    )
+
+    adapter = WeatherAdapter()
+    clear_snap = await adapter.get_weather(
+        (1.3500, 103.6800), override=WeatherCondition.CLEAR
+    )
+    rain_snap = await adapter.get_weather(
+        (1.3500, 103.6800), override=WeatherCondition.RAINY
+    )
+
+    # Under clear skies, shelter weight is 0.15 / 0.65 (~23%) vs 0.45 / 0.90 (50%) in rain
+    w_clear = service._select_weights(profile, weather=clear_snap)
+    w_rain = service._select_weights(profile, weather=rain_snap)
+    assert w_rain["shelter"] > w_clear["shelter"] + 0.20
+
+    # Sheltered detour gains score in rain while exposed shortcut loses score
+    exposed_clear = service.calculate_match_score(
+        exposed_shortcut, profile, weather=clear_snap
+    )
+    exposed_rain = service.calculate_match_score(
+        exposed_shortcut, profile, weather=rain_snap
+    )
+    sheltered_clear = service.calculate_match_score(
+        sheltered_detour, profile, weather=clear_snap
+    )
+    sheltered_rain = service.calculate_match_score(
+        sheltered_detour, profile, weather=rain_snap
+    )
+
+    assert exposed_rain < exposed_clear
+    assert sheltered_rain > sheltered_clear
+    assert sheltered_rain > exposed_rain
+
+
+@pytest.mark.asyncio
+async def test_get_weather_context_simulated_override(route_service_deps):
+    from src.services.adapters.weather_adapter import WeatherCondition
+
+    service = route_service_deps["service"]
+    user_id = PydanticObjectId()
+    route_service_deps["profile_repo"].find_by_user_id.return_value = make_profile()
+
+    ctx = await service.get_weather_context(
+        user_id=user_id,
+        coord=(1.2966, 103.8498),
+        weather_override=WeatherCondition.THUNDERY,
+    )
+    assert ctx.condition == WeatherCondition.THUNDERY
+    assert ctx.is_simulated is True
+    assert ctx.shelter_weight_pct >= 50
