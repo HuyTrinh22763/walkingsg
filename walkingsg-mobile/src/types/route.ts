@@ -2,9 +2,31 @@ import type { RouteModel } from '../constants/mockData';
 
 export type RouteCoord = [number, number];
 
+export type WeatherCondition =
+  | 'clear'
+  | 'cloudy'
+  | 'hot_sunny'
+  | 'rainy'
+  | 'thundery';
+
+export type WeatherSimMode = 'live' | WeatherCondition;
+
 export interface RouteSearchRequest {
   origin_coord: RouteCoord;
   destination_coord: RouteCoord;
+  origin_name?: string;
+  destination_name?: string;
+  weather_override?: WeatherCondition | null;
+}
+
+export interface WeatherContextOut {
+  condition: WeatherCondition;
+  forecast_text: string;
+  temperature_c: number;
+  area_name: string;
+  advisory_message: string;
+  shelter_weight_pct: number;
+  is_simulated: boolean;
 }
 
 export interface RouteVariantSummary {
@@ -22,6 +44,7 @@ export interface RouteVariantSummary {
 export interface RouteSearchOut {
   starred_route: RouteVariantSummary;
   alternative_routes: RouteVariantSummary[];
+  weather?: WeatherContextOut | null;
 }
 
 export interface RouteDetailOut extends RouteVariantSummary {

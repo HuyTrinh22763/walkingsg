@@ -3,6 +3,8 @@ import type {
   RouteDetailOut,
   RouteSearchOut,
   RouteSearchRequest,
+  WeatherCondition,
+  WeatherContextOut,
 } from '../types/route';
 
 export const routeService = {
@@ -14,6 +16,27 @@ export const routeService = {
     return apiRequest<RouteSearchOut>('/route/generate', {
       method: 'POST',
       body: payload,
+      token,
+      clientId,
+    });
+  },
+
+  async getWeather(
+    latitude: number,
+    longitude: number,
+    token: string,
+    clientId: string,
+    weatherOverride?: WeatherCondition | null
+  ): Promise<WeatherContextOut> {
+    const params = new URLSearchParams({
+      latitude: String(latitude),
+      longitude: String(longitude),
+    });
+    if (weatherOverride) {
+      params.set('weather_override', weatherOverride);
+    }
+    return apiRequest<WeatherContextOut>(`/route/weather?${params.toString()}`, {
+      method: 'GET',
       token,
       clientId,
     });
