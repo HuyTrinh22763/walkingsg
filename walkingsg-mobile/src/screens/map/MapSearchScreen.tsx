@@ -2,14 +2,45 @@ import React, { useRef, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, View, Text, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import OneMapView, { OneMapViewHandle, MapPin, LatLng } from '../../components/OneMapView';
-import { RoutesTabIcon } from '../../components/SvgIcons';
+import {
+  RoutesTabIcon,
+  WeatherCloudIcon,
+  WeatherRainIcon,
+  WeatherStormIcon,
+  WeatherSunIcon,
+} from '../../components/SvgIcons';
 import { useApp } from '../../context/AppContext';
 import { hazardService } from '../../services/hazardService';
 import { formatHazardTitle, type HazardOut } from '../../types/hazard';
+import type { WeatherCondition, WeatherSimMode } from '../../types/route';
 import { findHazardsOnRoute } from '../../utils/routeUtils';
 import { styles } from './MapSearchScreen.styles';
 
 const SINGAPORE_CENTER: LatLng = { lat: 1.3521, lng: 103.8198 };
+
+const SIM_MODES: { mode: WeatherSimMode; label: string }[] = [
+  { mode: 'live', label: 'Live NEA' },
+  { mode: 'rainy', label: 'Rain' },
+  { mode: 'thundery', label: 'Storm' },
+  { mode: 'hot_sunny', label: 'Heat' },
+  { mode: 'clear', label: 'Clear' },
+];
+
+const SIM_LABELS: Record<WeatherSimMode, string> = {
+  live: 'Live',
+  rainy: 'Rain',
+  thundery: 'Storm',
+  hot_sunny: 'Heat',
+  cloudy: 'Cloudy',
+  clear: 'Clear',
+};
+
+function renderWeatherIcon(condition: WeatherCondition, size = 16) {
+  if (condition === 'thundery') return <WeatherStormIcon size={size} />;
+  if (condition === 'rainy') return <WeatherRainIcon size={size} />;
+  if (condition === 'hot_sunny') return <WeatherSunIcon size={size} />;
+  return <WeatherCloudIcon size={size} />;
+}
 
 export default function MapSearchScreen({ navigation }: any) {
   // Section Map Search Logic
@@ -17,15 +48,21 @@ export default function MapSearchScreen({ navigation }: any) {
   const {
     generateRoutes,
     isRouteLoading,
+    routeWeather,
+    weatherSimMode,
+    refreshWeather,
+    applyWeatherMode,
     origin,
     destination,
     selectedRouteDetail,
     gpsStatus,
     userGpsLocation,
     setupInitialGpsLocation,
+    user,
   } = useApp();
 
   const [nearbyHazards, setNearbyHazards] = useState<HazardOut[]>([]);
+  const [isSimOpen, setIsSimOpen] = useState<boolean>(false);
 
   useEffect(() => {
     if (!origin && !destination) {
@@ -45,6 +82,29 @@ export default function MapSearchScreen({ navigation }: any) {
       setupInitialGpsLocation().catch(() => {});
     }
   }, [origin, gpsStatus, setupInitialGpsLocation]);
+
+  useEffect(() => {
+    const lat = origin
+      ? origin.latitude
+      : userGpsLocation
+      ? userGpsLocation.latitude
+      : SINGAPORE_CENTER.lat;
+    const lng = origin
+      ? origin.longitude
+      : userGpsLocation
+      ? userGpsLocation.longitude
+      : SINGAPORE_CENTER.lng;
+    refreshWeather([lat, lng]).catch(() => {});
+  }, [
+    origin?.latitude,
+    origin?.longitude,
+    userGpsLocation?.latitude,
+    userGpsLocation?.longitude,
+    user.heatSensitivity,
+    user.mobilityMode,
+    user.age,
+    refreshWeather,
+  ]);
 
   const polylineCoords = selectedRouteDetail?.polyline ?? [];
   const routeCoordinates: LatLng[] =
@@ -140,25 +200,93 @@ export default function MapSearchScreen({ navigation }: any) {
           mapRef={mapRef}
         />
 
-        <TouchableOpacity
-          style={styles.mapSearch_innerFloatingSearch}
-          onPress={() => navigation.navigate('SearchLocation')}
-          activeOpacity={0.85}
-        >
-          <View style={styles.mapSearch_innerSearchRow}>
-            <View style={[styles.mapSearch_innerPinDot, styles.mapSearch_innerPinGreen]} />
-            <Text style={styles.mapSearch_innerInputText} numberOfLines={1}>
-              {origin ? origin.address_label : 'Select starting point'}
-            </Text>
-          </View>
-          <View style={styles.mapSearch_innerDivider} />
-          <View style={styles.mapSearch_innerSearchRow}>
-            <View style={[styles.mapSearch_innerPinDot, styles.mapSearch_innerPinBrown]} />
-            <Text style={styles.mapSearch_innerInputText} numberOfLines={1}>
-              {destination ? destination.address_label : 'Select destination'}
-            </Text>
-          </View>
-        </TouchableOpacity>
+        <View style={styles.mapSearch_innerTopOverlay} pointerEvents="box-none">
+          <TouchableOpacity
+            style={styles.mapSearch_innerFloatingSearch}
+            onPress={() => navigation.navigate('SearchLocation')}
+            activeOpacity={0.85}
+          >
+            <View style={styles.mapSearch_innerSearchRow}>
+              <View style={[styles.mapSearch_innerPinDot, styles.mapSearch_innerPinGreen]} />
+              <Text style={styles.mapSearch_innerInputText} numberOfLines={1}>
+                {origin ? origin.address_label : 'Select starting point'}
+              </Text>
+            </View>
+            <View style={styles.mapSearch_innerDivider} />
+            <View style={styles.mapSearch_innerSearchRow}>
+              <View style={[styles.mapSearch_innerPinDot, styles.mapSearch_innerPinBrown]} />
+              <Text style={styles.mapSearch_innerInputText} numberOfLines={1}>
+                {destination ? destination.address_label : 'Select destination'}
+              </Text>
+            </View>
+          </TouchableOpacity>
+
+          {/* Section Map Weather Pill */}
+          {routeWeather ? (
+            <View
+              style={[
+                styles.mapSearch_innerWeatherPill,
+                (routeWeather.condition === 'rainy' || routeWeather.condition === 'thundery') &&
+                  styles.mapSearch_innerWeatherPill_rain,
+                routeWeather.condition === 'hot_sunny' &&
+                  styles.mapSearch_innerWeatherPill_hot,
+              ]}
+            >
+              <View style={styles.mapSearch_innerWeatherRow}>
+                <View style={styles.mapSearch_innerWeatherInfo}>
+                  {renderWeatherIcon(routeWeather.condition, 16)}
+                  <Text style={styles.mapSearch_innerWeatherText} numberOfLines={1}>
+                    {routeWeather.forecast_text} · {routeWeather.temperature_c.toFixed(1)}°C
+                  </Text>
+                </View>
+
+                <TouchableOpacity
+                  style={styles.mapSearch_innerDemoBtn}
+                  onPress={() => setIsSimOpen((prev) => !prev)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.mapSearch_innerDemoBtnText}>
+                    {weatherSimMode === 'live'
+                      ? `Demo Weather ${isSimOpen ? '▴' : '▾'}`
+                      : `Sim: ${SIM_LABELS[weatherSimMode]} ${isSimOpen ? '▴' : '▾'}`}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {isSimOpen ? (
+                <View style={styles.mapSearch_innerSimRow}>
+                  {SIM_MODES.map((item) => {
+                    const active = weatherSimMode === item.mode;
+                    return (
+                      <TouchableOpacity
+                        key={item.mode}
+                        style={[
+                          styles.mapSearch_innerSimChip,
+                          active && styles.mapSearch_innerSimChip_active,
+                        ]}
+                        onPress={() =>
+                          applyWeatherMode(item.mode, [mapCenter.lat, mapCenter.lng])
+                        }
+                        disabled={isRouteLoading}
+                        activeOpacity={0.8}
+                      >
+                        <Text
+                          style={[
+                            styles.mapSearch_innerSimChipText,
+                            active && styles.mapSearch_innerSimChipText_active,
+                          ]}
+                        >
+                          {item.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              ) : null}
+            </View>
+          ) : null}
+          {/* End Section Map Weather Pill */}
+        </View>
 
         {/* Map Legend */}
         <View style={styles.mapSearch_innerMapLegend}>
