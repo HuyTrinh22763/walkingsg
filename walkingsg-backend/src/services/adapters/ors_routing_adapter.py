@@ -62,9 +62,6 @@ class OrsRoutingAdapter:
                 [origin_coord[1], origin_coord[0]],
                 [destination_coord[1], destination_coord[0]],
             ],
-            "alternative_routes": {
-                "target_count": 3,
-            },
         }
 
         if avoid_polygons:
@@ -73,6 +70,10 @@ class OrsRoutingAdapter:
                     "type": "MultiPolygon",
                     "coordinates": avoid_polygons,
                 }
+            }
+        else:
+            body["alternative_routes"] = {
+                "target_count": 3,
             }
 
         try:

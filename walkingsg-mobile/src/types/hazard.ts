@@ -10,6 +10,7 @@ export interface HazardReportRequest {
   hazard_type: HazardType;
   latitude: number;
   longitude: number;
+  description?: string;
 }
 
 export interface HazardOut {
@@ -18,6 +19,7 @@ export interface HazardOut {
   segment_id: string;
   latitude: number;
   longitude: number;
+  description?: string;
   report_timestamp: string;
 }
 
@@ -40,21 +42,24 @@ export const formatHazardIcon = (type: HazardType): HazardIconName => {
   return 'hazard';
 };
 
-export const formatHazardTimeAgo = (
-  reportTimestamp: string,
-  now: Date = new Date()
-): string => {
-  if (!reportTimestamp) return 'Just now';
-
-  // If timestamp has no timezone offset (e.g. "2026-10-27T05:50:14"),
-  // JavaScript Date parses it as local time instead of UTC.
-  // Appending 'Z' ensures it is correctly parsed in UTC.
+const normalizeTimestampUtc = (reportTimestamp: string): Date | null => {
+  if (!reportTimestamp) return null;
   const hasTimezone =
     reportTimestamp.endsWith('Z') ||
     /[+-]\d{2}(?::?\d{2})?$/.test(reportTimestamp);
   const normalized = hasTimezone ? reportTimestamp : `${reportTimestamp}Z`;
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
 
-  const elapsedMs = now.getTime() - new Date(normalized).getTime();
+export const formatHazardTimeAgo = (
+  reportTimestamp: string,
+  now: Date = new Date()
+): string => {
+  const date = normalizeTimestampUtc(reportTimestamp);
+  if (!date) return 'Just now';
+
+  const elapsedMs = now.getTime() - date.getTime();
   if (Number.isNaN(elapsedMs) || elapsedMs < 0) return 'Just now';
 
   const minutes = Math.floor(elapsedMs / 60000);
@@ -68,3 +73,15 @@ export const formatHazardTimeAgo = (
   return `${Math.floor(hours / 24)} days ago`;
 };
 
+export const formatHazardTimestamp = (reportTimestamp: string): string => {
+  const date = normalizeTimestampUtc(reportTimestamp);
+  if (!date) return 'Unknown time';
+  return date.toLocaleString('en-SG', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+};

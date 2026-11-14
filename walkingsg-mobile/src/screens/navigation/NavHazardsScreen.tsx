@@ -22,7 +22,7 @@ import { styles } from './NavHazardsScreen.styles';
 
 export default function NavHazardsScreen({ navigation }: any) {
   // Section Nav Hazards Logic
-  const { origin, userGpsLocation, selectedRouteDetail, rerouteAroundHazards } = useApp();
+  const { origin, selectedRouteDetail, rerouteAroundHazards } = useApp();
   const [hazards, setHazards] = useState<HazardOut[]>([]);
   const [loading, setLoading] = useState(false);
   const [isRerouting, setIsRerouting] = useState(false);
@@ -72,11 +72,9 @@ export default function NavHazardsScreen({ navigation }: any) {
     }, [origin])
   );
 
-  const currentCoord: [number, number] = userGpsLocation
-    ? [userGpsLocation.latitude, userGpsLocation.longitude]
-    : origin
-      ? [origin.latitude, origin.longitude]
-      : selectedRouteDetail?.polyline[0] ?? [1.3521, 103.8198];
+  const currentCoord: [number, number] = origin
+    ? [origin.latitude, origin.longitude]
+    : selectedRouteDetail?.polyline[0] ?? [1.3521, 103.8198];
 
   const handleReroute = async () => {
     if (isRerouting) return;

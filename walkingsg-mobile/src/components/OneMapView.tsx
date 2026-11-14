@@ -24,11 +24,15 @@ export interface OneMapViewProps {
   routeCoordinates?: LatLng[];
   /** Custom pins to render on the map */
   pins?: MapPin[];
-  /** Real-time compass heading in degrees (0-360) for navigation view cone */
+  /** Real-time compass heading in degrees (0-360) for user view cone */
   userHeading?: number | null;
+  /** Steady bearing of the walking route segment ahead (0-360) for 3D POV camera lock */
+  walkBearing?: number | null;
+  /** Enable 3D POV walk-centered view */
+  povMode?: boolean;
   /** Show dashed red out-of-bounds boundary ring */
   showOutOfBoundsBoundary?: boolean;
-  /** Ref handle to imperatively call zoom in/out */
+  /** Ref handle to imperatively call zoom in/out, recenter POV, or spread out route view */
   mapRef?: React.MutableRefObject<OneMapViewHandle | null>;
   onMarkerPress?: (id: string) => void;
   onMapPress?: (coords: LatLng) => void;
@@ -37,7 +41,9 @@ export interface OneMapViewProps {
 export interface OneMapViewHandle {
   zoomIn: () => void;
   zoomOut: () => void;
-  setCenter: (coords: LatLng) => void;
+  setCenter: (coords: LatLng, zoom?: number) => void;
+  recenterPov: (coords: LatLng, walkBearing?: number | null) => void;
+  spreadOutView: () => void;
 }
 // End Section OneMapView Types
 
@@ -48,6 +54,7 @@ function buildLeafletHtml(props: OneMapViewProps): string {
   const route = props.routeCoordinates ?? [];
   const pins = props.pins ?? [];
   const showBoundary = props.showOutOfBoundsBoundary ?? false;
+  const initialPov = props.povMode ?? false;
 
   const routeJson = JSON.stringify(route.map((c) => [c.lat, c.lng]));
   const pinsJson = JSON.stringify(pins);
@@ -62,9 +69,36 @@ function buildLeafletHtml(props: OneMapViewProps): string {
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body, #map { width: 100%; height: 100%; background: #e7eed9; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #e7eed9; }
+    #map-stage {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      perspective: 850px;
+      background: #e7eed9;
+    }
+    #map {
+      width: 100%;
+      height: 100%;
+      background: #e7eed9;
+      transform-origin: 50% 50%;
+      transition: transform 0.32s cubic-bezier(0.22, 0.8, 0.36, 1);
+      will-change: transform;
+    }
+    #map.pov-mode {
+      position: absolute;
+      width: 280%;
+      height: 280%;
+      top: -90%;
+      left: -90%;
+    }
+    .pin-billboard {
+      transition: transform 0.3s cubic-bezier(0.22, 0.8, 0.36, 1);
+      transform-origin: 50% 50%;
+    }
 
-    /* Custom pulsing user location dot and navigation scope beam */
+    /* Custom pulsing user location dot and 3D navigation direction beam */
     @keyframes pulse {
       0%   { transform: scale(1);   opacity: 1; }
       50%  { transform: scale(1.6); opacity: 0.4; }
@@ -72,35 +106,35 @@ function buildLeafletHtml(props: OneMapViewProps): string {
     }
     .user-pin-wrapper {
       position: relative;
-      width: 28px;
-      height: 28px;
+      width: 36px;
+      height: 36px;
       display: flex;
       align-items: center;
       justify-content: center;
     }
     .user-heading-cone {
       position: absolute;
-      width: 140px;
-      height: 140px;
-      top: -56px;
-      left: -56px;
+      width: 150px;
+      height: 150px;
+      top: -57px;
+      left: -57px;
       pointer-events: none;
-      transform-origin: 70px 70px;
-      transition: transform 0.12s cubic-bezier(0.2, 0.8, 0.4, 1), opacity 0.25s ease;
+      transform-origin: 75px 75px;
+      transition: transform 0.15s cubic-bezier(0.2, 0.8, 0.4, 1), opacity 0.25s ease;
       z-index: 1;
     }
     .user-dot-ring {
       position: relative;
       z-index: 2;
-      width: 28px; height: 28px; border-radius: 50%;
-      background: rgba(31,111,67,0.2);
+      width: 36px; height: 36px; border-radius: 50%;
+      background: rgba(31,111,67,0.24);
       display: flex; align-items: center; justify-content: center;
       animation: pulse 2s infinite;
     }
     .user-dot-core {
-      width: 14px; height: 14px; border-radius: 50%;
-      background: #1f6f43; border: 2.5px solid #ffffff;
-      box-shadow: 0 0 6px rgba(31,111,67,0.6);
+      width: 18px; height: 18px; border-radius: 50%;
+      background: #1f6f43; border: 3px solid #ffffff;
+      box-shadow: 0 3px 10px rgba(31,111,67,0.85);
     }
 
     /* Hazard pin */
@@ -131,12 +165,14 @@ function buildLeafletHtml(props: OneMapViewProps): string {
   </style>
 </head>
 <body>
-  <div id="map"></div>
+  <div id="map-stage">
+    <div id="map" class="${initialPov ? 'pov-mode' : ''}"></div>
+  </div>
   <script>
     // --- Map Init ---
     var map = L.map('map', {
       center: [${center.lat}, ${center.lng}],
-      zoom: ${zoom},
+      zoom: ${initialPov ? 18 : zoom},
       zoomControl: false,
       minZoom: 11,
       maxZoom: 19,
@@ -151,11 +187,12 @@ function buildLeafletHtml(props: OneMapViewProps): string {
         attribution: '&copy; OneMap SLA Singapore',
         maxZoom: 19,
         detectRetina: false,
+        keepBuffer: 6,
       }
     );
     var osmFallback = L.tileLayer(
       'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-      { attribution: '&copy; OpenStreetMap contributors', maxZoom: 19 }
+      { attribution: '&copy; OpenStreetMap contributors', maxZoom: 19, keepBuffer: 6 }
     );
 
     oneMapTile.addTo(map);
@@ -176,10 +213,14 @@ function buildLeafletHtml(props: OneMapViewProps): string {
 
     var markers = {};
     var routeLayer = null;
+    var routeCasingLayer = null;
     var routeCoords = ${routeJson};
     var pins = ${pinsJson};
     var currentHeading = ${props.userHeading != null ? props.userHeading : 'null'};
     var currentAngle = ${props.userHeading != null ? props.userHeading : 'null'};
+    var currentWalkBearing = ${props.walkBearing != null ? props.walkBearing : (props.userHeading != null ? props.userHeading : 0)};
+    var currentWalkAngle = currentWalkBearing;
+    var isPovMode = ${initialPov ? 'true' : 'false'};
 
     function unwrapAngle(targetDeg, current) {
       if (current === null || isNaN(current)) return targetDeg;
@@ -189,6 +230,56 @@ function buildLeafletHtml(props: OneMapViewProps): string {
       return current + diff;
     }
 
+    // 3D Walk POV: tilts map in 3D and aligns steadily with the walk path (does NOT spin with user's compass)
+    function applyPovTransform() {
+      var mapEl = document.getElementById('map');
+      if (!mapEl) return;
+      var walkAngle = (currentWalkAngle !== null && !isNaN(currentWalkAngle)) ? currentWalkAngle : 0;
+      if (isPovMode) {
+        mapEl.style.transform = 'scale(1.22) rotateX(48deg) rotateZ(' + (-walkAngle) + 'deg)';
+      } else {
+        mapEl.style.transform = 'none';
+      }
+      var billboards = document.querySelectorAll('.pin-billboard');
+      for (var i = 0; i < billboards.length; i++) {
+        billboards[i].style.transform = isPovMode ? ('rotateZ(' + walkAngle + 'deg)') : 'none';
+      }
+    }
+
+    function setPovMode(enabled, lat, lng, walkBearing) {
+      var mapEl = document.getElementById('map');
+      var prev = isPovMode;
+      isPovMode = !!enabled;
+      if (walkBearing !== undefined && walkBearing !== null && !isNaN(walkBearing)) {
+        var normWalk = ((walkBearing % 360) + 360) % 360;
+        currentWalkAngle = unwrapAngle(normWalk, currentWalkAngle);
+      }
+      if (mapEl) {
+        if (isPovMode) mapEl.classList.add('pov-mode');
+        else mapEl.classList.remove('pov-mode');
+      }
+      applyPovTransform();
+      if (prev !== isPovMode) {
+        setTimeout(function () {
+          map.invalidateSize({ pan: false, animate: false });
+          if (isPovMode) {
+            var targetCenter = (lat != null && lng != null) ? [lat, lng] : map.getCenter();
+            map.setView(targetCenter, 18, { animate: false });
+          }
+        }, 20);
+      }
+    }
+
+    function updateWalkBearing(deg) {
+      if (deg === null || deg === undefined || isNaN(deg)) return;
+      var normalized = ((deg % 360) + 360) % 360;
+      currentWalkAngle = unwrapAngle(normalized, currentWalkAngle);
+      if (isPovMode) {
+        applyPovTransform();
+      }
+    }
+
+    // Updates ONLY the user's 3D view cone, never spinning the map
     function updateHeading(deg) {
       currentHeading = deg;
       var cone = document.getElementById('user-heading-cone');
@@ -211,51 +302,46 @@ function buildLeafletHtml(props: OneMapViewProps): string {
       return L.divIcon({
         html: '<div class="user-pin-wrapper">' +
                 '<div id="user-heading-cone" class="user-heading-cone" style="' + transformStyle + '">' +
-                  '<svg width="140" height="140" viewBox="0 0 140 140" style="overflow:visible;">' +
+                  '<svg width="150" height="150" viewBox="0 0 150 150" style="overflow:visible;">' +
                     '<defs>' +
-                      '<radialGradient id="headingConeGrad" gradientUnits="userSpaceOnUse" cx="70" cy="70" r="70" fx="70" fy="70">' +
-                        '<stop offset="0%" stop-color="#1f6f43" stop-opacity="0.45" />' +
-                        '<stop offset="35%" stop-color="#22c55e" stop-opacity="0.22" />' +
-                        '<stop offset="70%" stop-color="#4ade80" stop-opacity="0.07" />' +
+                      '<radialGradient id="headingConeGrad" gradientUnits="userSpaceOnUse" cx="75" cy="75" r="72" fx="75" fy="75">' +
+                        '<stop offset="0%" stop-color="#1f6f43" stop-opacity="0.55" />' +
+                        '<stop offset="40%" stop-color="#22c55e" stop-opacity="0.28" />' +
+                        '<stop offset="75%" stop-color="#4ade80" stop-opacity="0.10" />' +
                         '<stop offset="100%" stop-color="#4ade80" stop-opacity="0" />' +
                       '</radialGradient>' +
-                      '<radialGradient id="headingCoreGrad" gradientUnits="userSpaceOnUse" cx="70" cy="70" r="50" fx="70" fy="70">' +
-                        '<stop offset="0%" stop-color="#1f6f43" stop-opacity="0.65" />' +
-                        '<stop offset="40%" stop-color="#22c55e" stop-opacity="0.3" />' +
+                      '<radialGradient id="headingCoreGrad" gradientUnits="userSpaceOnUse" cx="75" cy="75" r="52" fx="75" fy="75">' +
+                        '<stop offset="0%" stop-color="#1f6f43" stop-opacity="0.75" />' +
+                        '<stop offset="45%" stop-color="#22c55e" stop-opacity="0.38" />' +
                         '<stop offset="100%" stop-color="#1f6f43" stop-opacity="0" />' +
                       '</radialGradient>' +
-                      '<linearGradient id="headingBeamLine" gradientUnits="userSpaceOnUse" x1="70" y1="70" x2="70" y2="12">' +
-                        '<stop offset="0%" stop-color="#ffffff" stop-opacity="0.75" />' +
-                        '<stop offset="60%" stop-color="#ffffff" stop-opacity="0.3" />' +
-                        '<stop offset="100%" stop-color="#ffffff" stop-opacity="0" />' +
-                      '</linearGradient>' +
                     '</defs>' +
-                    '<path d="M 70 70 L 36 11.11 A 68 68 0 0 1 104 11.11 Z" fill="url(#headingConeGrad)" />' +
-                    '<path d="M 70 70 L 57.06 21.7 A 50 50 0 0 1 82.94 21.7 Z" fill="url(#headingCoreGrad)" />' +
-                    '<line x1="70" y1="56" x2="70" y2="16" stroke="url(#headingBeamLine)" stroke-width="2" stroke-linecap="round" />' +
+                    '<path d="M 75 75 L 38 11 A 72 72 0 0 1 112 11 Z" fill="url(#headingConeGrad)" />' +
+                    '<path d="M 75 75 L 60 22 A 52 52 0 0 1 90 22 Z" fill="url(#headingCoreGrad)" />' +
+                    '<polygon points="75,38 65,56 75,50 85,56" fill="#1f6f43" stroke="#ffffff" stroke-width="2" stroke-linejoin="round" />' +
                   '</svg>' +
                 '</div>' +
                 '<div class="user-dot-ring"><div class="user-dot-core"></div></div>' +
               '</div>',
-        className: '', iconSize: [28, 28], iconAnchor: [14, 14],
+        className: '', iconSize: [36, 36], iconAnchor: [18, 18],
       });
     }
     function createOriginIcon() {
       return L.divIcon({
-        html: '<div style="width:16px;height:16px;border-radius:50%;background:#1f6f43;border:2.5px solid #fff;box-shadow:0 2px 6px rgba(31,111,67,0.5)"></div>',
+        html: '<div class="pin-billboard" style="width:16px;height:16px;border-radius:50%;background:#1f6f43;border:2.5px solid #fff;box-shadow:0 2px 6px rgba(31,111,67,0.5)"></div>',
         className: '', iconSize: [16, 16], iconAnchor: [8, 8],
       });
     }
     function createDestIcon() {
       return L.divIcon({
-        html: '<svg width="24" height="32" viewBox="0 0 24 32" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 0C5.373 0 0 5.373 0 12c0 9 12 20 12 20s12-11 12-20C24 5.373 18.627 0 12 0z" fill="#a94c1c"/><circle cx="12" cy="12" r="5" fill="#fff"/></svg>',
+        html: '<div class="pin-billboard" style="transform-origin: 50% 100%;"><svg width="24" height="32" viewBox="0 0 24 32" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 0C5.373 0 0 5.373 0 12c0 9 12 20 12 20s12-11 12-20C24 5.373 18.627 0 12 0z" fill="#a94c1c"/><circle cx="12" cy="12" r="5" fill="#fff"/></svg></div>',
         className: '', iconSize: [24, 32], iconAnchor: [12, 32],
       });
     }
     function createHazardIcon(type) {
       var cls = type === 'hazard' ? 'hazard-pin' : 'caution-pin';
       return L.divIcon({
-        html: '<div class="' + cls + '">!</div>',
+        html: '<div class="pin-billboard ' + cls + '">!</div>',
         className: '', iconSize: [28, 28], iconAnchor: [14, 14],
       });
     }
@@ -312,18 +398,30 @@ function buildLeafletHtml(props: OneMapViewProps): string {
           delete markers[id];
         }
       });
+      if (isPovMode) applyPovTransform();
     }
 
     function setRoute(coordinates) {
+      if (routeCasingLayer) {
+        map.removeLayer(routeCasingLayer);
+        routeCasingLayer = null;
+      }
       if (routeLayer) {
         map.removeLayer(routeLayer);
         routeLayer = null;
       }
       if (!coordinates || coordinates.length < 2) return;
+      routeCasingLayer = L.polyline(coordinates, {
+        color: '#0f3d23',
+        weight: 12,
+        opacity: 0.45,
+        lineCap: 'round',
+        lineJoin: 'round',
+      }).addTo(map);
       routeLayer = L.polyline(coordinates, {
-        color: '#1f6f43',
-        weight: 6,
-        opacity: 0.9,
+        color: '#22c55e',
+        weight: 7,
+        opacity: 0.95,
         lineCap: 'round',
         lineJoin: 'round',
       }).addTo(map);
@@ -331,6 +429,13 @@ function buildLeafletHtml(props: OneMapViewProps): string {
 
     renderPins(pins);
     setRoute(routeCoords);
+    if (isPovMode) {
+      applyPovTransform();
+      setTimeout(function () {
+        map.invalidateSize({ pan: false, animate: false });
+        map.setView([${center.lat}, ${center.lng}], 18, { animate: false });
+      }, 30);
+    }
 
     map.on('click', function (e) {
       postToRN({ type: 'onMapPress', lat: e.latlng.lat, lng: e.latlng.lng });
@@ -346,6 +451,26 @@ function buildLeafletHtml(props: OneMapViewProps): string {
         if (data.type === 'setPins' && Array.isArray(data.pins)) renderPins(data.pins);
         if (data.type === 'setRoute' || data.type === 'drawRoute') setRoute(data.coordinates || []);
         if (data.type === 'setHeading') updateHeading(data.heading);
+        if (data.type === 'setWalkBearing') updateWalkBearing(data.walkBearing);
+        if (data.type === 'setPovMode') setPovMode(data.povMode, data.lat, data.lng, data.walkBearing);
+        if (data.type === 'recenterPov') {
+          setPovMode(true, data.lat, data.lng, data.walkBearing);
+          setTimeout(function () {
+            map.invalidateSize({ pan: false, animate: false });
+            map.setView([data.lat, data.lng], 18, { animate: false });
+          }, 30);
+        }
+        if (data.type === 'spreadOutView') {
+          setPovMode(false);
+          setTimeout(function () {
+            map.invalidateSize({ pan: false, animate: false });
+            if (routeLayer) {
+              map.fitBounds(routeLayer.getBounds(), { padding: [60, 60], animate: true });
+            } else {
+              map.setZoom(15);
+            }
+          }, 30);
+        }
       } catch (e) {}
     }
 
@@ -399,6 +524,18 @@ export default function OneMapView(props: OneMapViewProps) {
     if (current.userHeading != null) {
       postToMap({ type: 'setHeading', heading: current.userHeading });
     }
+    if (current.walkBearing != null) {
+      postToMap({ type: 'setWalkBearing', walkBearing: current.walkBearing });
+    }
+    if (current.povMode != null) {
+      postToMap({
+        type: 'setPovMode',
+        povMode: current.povMode,
+        lat: current.center?.lat,
+        lng: current.center?.lng,
+        walkBearing: current.walkBearing,
+      });
+    }
   }, [postToMap]);
 
   const applyMapMessage = useCallback((data: { type?: string; id?: string; lat?: number; lng?: number }) => {
@@ -418,7 +555,15 @@ export default function OneMapView(props: OneMapViewProps) {
     props.mapRef.current = {
       zoomIn: () => postToMap({ type: 'zoomIn' }),
       zoomOut: () => postToMap({ type: 'zoomOut' }),
-      setCenter: (c) => postToMap({ type: 'setCenter', lat: c.lat, lng: c.lng }),
+      setCenter: (c, z) => postToMap({ type: 'setCenter', lat: c.lat, lng: c.lng, zoom: z }),
+      recenterPov: (c, wb) =>
+        postToMap({
+          type: 'recenterPov',
+          lat: c.lat,
+          lng: c.lng,
+          walkBearing: wb ?? propsRef.current.walkBearing,
+        }),
+      spreadOutView: () => postToMap({ type: 'spreadOutView' }),
     };
   }, [postToMap, props.mapRef]);
 
@@ -456,6 +601,22 @@ export default function OneMapView(props: OneMapViewProps) {
     if (!isReadyRef.current) return;
     postToMap({ type: 'setHeading', heading: propsRef.current.userHeading ?? null });
   }, [props.userHeading, postToMap]);
+
+  useEffect(() => {
+    if (!isReadyRef.current || props.walkBearing == null) return;
+    postToMap({ type: 'setWalkBearing', walkBearing: props.walkBearing });
+  }, [props.walkBearing, postToMap]);
+
+  useEffect(() => {
+    if (!isReadyRef.current) return;
+    postToMap({
+      type: 'setPovMode',
+      povMode: !!props.povMode,
+      lat: propsRef.current.center?.lat,
+      lng: propsRef.current.center?.lng,
+      walkBearing: propsRef.current.walkBearing,
+    });
+  }, [props.povMode, postToMap]);
 
   const handleNativeMessage = useCallback((event: { nativeEvent: { data: string } }) => {
     try {

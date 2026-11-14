@@ -34,6 +34,7 @@ class HazardModel(Document):
     reported_by_user_id: PydanticObjectId
     segment_id: str
     hazard_type: HazardType
+    description: str = ""
     hazard_status: HazardStatus = HazardStatus.ACTIVE
     location: HazardLocation
     report_timestamp: datetime = Field(default_factory=utc_now)

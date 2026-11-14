@@ -6,7 +6,13 @@ import { profileService } from '../services/profileService';
 import { routeService } from '../services/routeService';
 import { navigationService } from '../services/navigationService';
 import { toRouteCard, toRouteCards } from '../types/route';
-import type { RouteCoord, RouteDetailOut, RouteSearchOut } from '../types/route';
+import type {
+  RouteCoord,
+  RouteDetailOut,
+  RouteSearchOut,
+  WeatherContextOut,
+  WeatherSimMode,
+} from '../types/route';
 import type {
   NavStartResponse,
   NavTrackResponse,
@@ -82,8 +88,22 @@ interface AppContextType {
   setSelectedSort: (sort: 'match' | 'stairs' | 'shade') => void;
   selectedRoute: RouteModel;
   setSelectedRoute: (route: RouteModel) => void;
-  generateRoutes: (origin: RouteCoord, destination: RouteCoord) => Promise<RouteSearchOut>;
+  generateRoutes: (
+    origin: RouteCoord,
+    destination: RouteCoord,
+    modeOverride?: WeatherSimMode
+  ) => Promise<RouteSearchOut>;
   isRouteLoading: boolean;
+  routeWeather: WeatherContextOut | null;
+  weatherSimMode: WeatherSimMode;
+  refreshWeather: (
+    coord?: RouteCoord,
+    modeOverride?: WeatherSimMode
+  ) => Promise<WeatherContextOut | null>;
+  applyWeatherMode: (
+    mode: WeatherSimMode,
+    fallbackCoord?: RouteCoord
+  ) => Promise<void>;
   selectedRouteDetail: RouteDetailOut | null;
   fetchRouteDetail: (routeId: string) => Promise<RouteDetailOut>;
   isRouteDetailLoading: boolean;
@@ -184,6 +204,8 @@ export function AppProvider({ children }: { children?: ReactNode }): ReactElemen
   const [selectedRouteDetail, setSelectedRouteDetail] = useState<RouteDetailOut | null>(null);
   const [isRouteLoading, setIsRouteLoading] = useState<boolean>(false);
   const [isRouteDetailLoading, setIsRouteDetailLoading] = useState<boolean>(false);
+  const [routeWeather, setRouteWeather] = useState<WeatherContextOut | null>(null);
+  const [weatherSimMode, setWeatherSimMode] = useState<WeatherSimMode>('live');
   const [isMapOutOfBounds, setIsMapOutOfBounds] = useState<boolean>(false);
   const [activeNavSession, setActiveNavSession] = useState<NavStartResponse | null>(null);
   const [isNavigating, setIsNavigating] = useState<boolean>(false);
@@ -282,6 +304,8 @@ export function AppProvider({ children }: { children?: ReactNode }): ReactElemen
     }
     setAuth(DEFAULT_AUTH);
     setUser(DEFAULT_USER);
+    setRouteWeather(null);
+    setWeatherSimMode('live');
   };
 
   const deleteAccount = async (): Promise<void> => {
@@ -289,6 +313,8 @@ export function AppProvider({ children }: { children?: ReactNode }): ReactElemen
     await profileService.deleteAccount(accessToken, userId, { confirmation: true });
     setAuth(DEFAULT_AUTH);
     setUser(DEFAULT_USER);
+    setRouteWeather(null);
+    setWeatherSimMode('live');
   };
 
   const toggleOutOfBounds = () => {
@@ -301,18 +327,68 @@ export function AppProvider({ children }: { children?: ReactNode }): ReactElemen
     setSelectedRouteDetail(null);
   };
 
+  const refreshWeather = useCallback(async (
+    coord?: RouteCoord,
+    modeOverride?: WeatherSimMode
+  ): Promise<WeatherContextOut | null> => {
+    if (!auth.accessToken || !auth.userId) {
+      return null;
+    }
+    const activeMode = modeOverride ?? weatherSimMode;
+    const targetLat =
+      coord?.[0] ??
+      locationState.origin?.latitude ??
+      locationState.userGpsLocation?.latitude ??
+      1.3521;
+    const targetLng =
+      coord?.[1] ??
+      locationState.origin?.longitude ??
+      locationState.userGpsLocation?.longitude ??
+      103.8198;
+
+    try {
+      const w = await routeService.getWeather(
+        targetLat,
+        targetLng,
+        auth.accessToken,
+        auth.userId,
+        activeMode === 'live' ? null : activeMode
+      );
+      setRouteWeather(w);
+      return w;
+    } catch (err) {
+      console.warn('Weather context fetch warning:', err);
+      return null;
+    }
+  }, [
+    auth.accessToken,
+    auth.userId,
+    weatherSimMode,
+    locationState.origin,
+    locationState.userGpsLocation,
+  ]);
+
   const generateRoutes = async (
     origin: RouteCoord,
-    destination: RouteCoord
+    destination: RouteCoord,
+    modeOverride?: WeatherSimMode
   ): Promise<RouteSearchOut> => {
     const { token, clientId } = requireSession();
+    const activeMode = modeOverride ?? weatherSimMode;
     setIsRouteLoading(true);
     try {
       const result = await routeService.generateRoutes(
-        { origin_coord: origin, destination_coord: destination },
+        {
+          origin_coord: origin,
+          destination_coord: destination,
+          weather_override: activeMode === 'live' ? null : activeMode,
+        },
         token,
         clientId
       );
+      if (result.weather) {
+        setRouteWeather(result.weather);
+      }
       const cards = toRouteCards(result);
       setRoutes(cards);
       setSelectedRouteState(cards[0]);
@@ -326,6 +402,26 @@ export function AppProvider({ children }: { children?: ReactNode }): ReactElemen
     } finally {
       setIsRouteLoading(false);
     }
+  };
+
+  const applyWeatherMode = async (
+    mode: WeatherSimMode,
+    fallbackCoord?: RouteCoord
+  ): Promise<void> => {
+    setWeatherSimMode(mode);
+    if (locationState.origin && locationState.destination) {
+      try {
+        await generateRoutes(
+          [locationState.origin.latitude, locationState.origin.longitude],
+          [locationState.destination.latitude, locationState.destination.longitude],
+          mode
+        );
+        return;
+      } catch (err) {
+        console.warn('Weather mode route update warning:', err);
+      }
+    }
+    await refreshWeather(fallbackCoord, mode);
   };
 
   const fetchRouteDetail = async (routeId: string): Promise<RouteDetailOut> => {
@@ -406,7 +502,7 @@ export function AppProvider({ children }: { children?: ReactNode }): ReactElemen
     );
 
     setSelectedRouteDetail(newRouteDetail);
-    setSelectedRoute(toRouteCard(newRouteDetail));
+    setSelectedRouteState(toRouteCard(newRouteDetail));
     return newRouteDetail;
   }, [auth.accessToken, auth.userId, activeNavSession]);
 
@@ -453,6 +549,10 @@ export function AppProvider({ children }: { children?: ReactNode }): ReactElemen
         setSelectedRoute,
         generateRoutes,
         isRouteLoading,
+        routeWeather,
+        weatherSimMode,
+        refreshWeather,
+        applyWeatherMode,
         selectedRouteDetail,
         fetchRouteDetail,
         isRouteDetailLoading,

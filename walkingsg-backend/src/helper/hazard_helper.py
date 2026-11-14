@@ -6,12 +6,14 @@ def format_hazard_response(value: Any) -> dict[str, Any]:
     """Turn a stored hazard into HazardOut fields."""
     if isinstance(value, dict):
         data = dict(value)
+        data["description"] = data.get("description") or ""
     else:
         hazard_id = getattr(value, "hazard_id", None) or getattr(value, "id", None)
         data = {
             "hazard_id": hazard_id,
             "hazard_type": value.hazard_type,
             "segment_id": value.segment_id,
+            "description": getattr(value, "description", None) or "",
             "report_timestamp": value.report_timestamp,
             "latitude": getattr(value, "latitude", None),
             "longitude": getattr(value, "longitude", None),
@@ -31,4 +33,3 @@ def format_hazard_response(value: Any) -> dict[str, Any]:
     if isinstance(ts, datetime) and ts.tzinfo is None:
         data["report_timestamp"] = ts.replace(tzinfo=UTC)
     return data
-

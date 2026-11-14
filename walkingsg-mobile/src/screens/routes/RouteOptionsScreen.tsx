@@ -1,14 +1,56 @@
-import React from 'react';
-import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
+import React, { useState } from 'react';
+import { ActivityIndicator, View, Text, TouchableOpacity, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { LeafIcon } from '../../components/SvgIcons';
+import {
+  LeafIcon,
+  WeatherCloudIcon,
+  WeatherRainIcon,
+  WeatherStormIcon,
+  WeatherSunIcon,
+} from '../../components/SvgIcons';
 import type { RouteModel } from '../../constants/mockData';
 import { useApp } from '../../context/AppContext';
+import type { WeatherCondition, WeatherSimMode } from '../../types/route';
 import { styles } from './RouteOptionsScreen.styles';
+
+const SIM_MODES: { mode: WeatherSimMode; label: string }[] = [
+  { mode: 'live', label: 'Live NEA' },
+  { mode: 'rainy', label: 'Rain' },
+  { mode: 'thundery', label: 'Storm' },
+  { mode: 'hot_sunny', label: 'Heat' },
+  { mode: 'clear', label: 'Clear' },
+];
+
+const SIM_LABELS: Record<WeatherSimMode, string> = {
+  live: 'Live',
+  rainy: 'Rain',
+  thundery: 'Storm',
+  hot_sunny: 'Heat',
+  cloudy: 'Cloudy',
+  clear: 'Clear',
+};
+
+function renderWeatherIcon(condition: WeatherCondition, size = 20) {
+  if (condition === 'thundery') return <WeatherStormIcon size={size} />;
+  if (condition === 'rainy') return <WeatherRainIcon size={size} />;
+  if (condition === 'hot_sunny') return <WeatherSunIcon size={size} />;
+  return <WeatherCloudIcon size={size} />;
+}
 
 export default function RouteOptionsScreen({ navigation }: any) {
   // Section Route Options Logic
-  const { routes, selectedSort, setSelectedSort, setSelectedRoute } = useApp();
+  const {
+    routes,
+    selectedSort,
+    setSelectedSort,
+    setSelectedRoute,
+    routeWeather,
+    weatherSimMode,
+    applyWeatherMode,
+    isRouteLoading,
+  } = useApp();
+
+  const [isSimOpen, setIsSimOpen] = useState<boolean>(false);
 
   const handleToggleSort = () => {
     if (selectedSort === 'match') setSelectedSort('stairs');
@@ -47,6 +89,80 @@ export default function RouteOptionsScreen({ navigation }: any) {
             </Text>
           </TouchableOpacity>
         </View>
+
+        {/* Section Weather Banner */}
+        {routeWeather ? (
+          <View
+            style={[
+              styles.routeOptions_innerWeatherCard,
+              (routeWeather.condition === 'rainy' || routeWeather.condition === 'thundery') &&
+                styles.routeOptions_innerWeatherCard_rain,
+              routeWeather.condition === 'hot_sunny' &&
+                styles.routeOptions_innerWeatherCard_hot,
+            ]}
+          >
+            <View style={styles.routeOptions_innerWeatherTop}>
+              <View style={styles.routeOptions_innerWeatherTitleRow}>
+                {renderWeatherIcon(routeWeather.condition, 20)}
+                <View style={styles.routeOptions_innerWeatherTextCol}>
+                  <Text style={styles.routeOptions_innerWeatherTitle}>
+                    {routeWeather.forecast_text} · {routeWeather.temperature_c.toFixed(1)}°C
+                  </Text>
+                  <Text style={styles.routeOptions_innerWeatherMsg}>
+                    {routeWeather.advisory_message}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.routeOptions_innerWeatherRightCol}>
+                <TouchableOpacity
+                  style={styles.routeOptions_innerDemoToggle}
+                  onPress={() => setIsSimOpen((prev) => !prev)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.routeOptions_innerDemoToggleText}>
+                    {weatherSimMode === 'live'
+                      ? `Demo Weather ${isSimOpen ? '▴' : '▾'}`
+                      : `Sim: ${SIM_LABELS[weatherSimMode]} ${isSimOpen ? '▴' : '▾'}`}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {isSimOpen ? (
+              <View style={styles.routeOptions_innerSimRow}>
+                {SIM_MODES.map((item) => {
+                  const active = weatherSimMode === item.mode;
+                  return (
+                    <TouchableOpacity
+                      key={item.mode}
+                      style={[
+                        styles.routeOptions_innerSimChip,
+                        active && styles.routeOptions_innerSimChip_active,
+                      ]}
+                      onPress={() => applyWeatherMode(item.mode)}
+                      disabled={isRouteLoading}
+                      activeOpacity={0.8}
+                    >
+                      <Text
+                        style={[
+                          styles.routeOptions_innerSimChipText,
+                          active && styles.routeOptions_innerSimChipText_active,
+                        ]}
+                      >
+                        {item.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+                {isRouteLoading ? (
+                  <ActivityIndicator size="small" color="#1f6f43" style={{ marginTop: 6, marginLeft: 4 }} />
+                ) : null}
+              </View>
+            ) : null}
+          </View>
+        ) : null}
+        {/* End Section Weather Banner */}
 
         <View style={styles.routeOptions_innerList}>
           {sortedRoutes.map((route, idx) => {

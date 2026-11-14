@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Alert } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { TopBarHeader } from '../../components/TopBarHeader';
 import { useApp } from '../../context/AppContext';
@@ -7,23 +7,50 @@ import { hazardService } from '../../services/hazardService';
 import type { HazardType } from '../../types/hazard';
 import { styles } from './FeedReportScreen.styles';
 
-const REPORT_CATEGORIES: { id: HazardType; label: string; desc?: string }[] = [
-  { id: 'lift', label: 'Lift or escalator down' },
-  { id: 'flooding', label: 'Flooding or ponding' },
-  { id: 'blocked', label: 'Path blocked' },
+const REPORT_CATEGORIES: { id: HazardType; label: string; desc: string; placeholder: string }[] = [
+  {
+    id: 'lift',
+    label: 'Lift or escalator down',
+    desc: 'Elevator or escalator is out of service or under maintenance',
+    placeholder: 'Describe which lift/escalator is down and nearby landmarks...',
+  },
+  {
+    id: 'flooding',
+    label: 'Flooding or ponding',
+    desc: 'Standing water or heavy ponding makes the walkway wet or impassable',
+    placeholder: 'Describe water depth, affected walkway section, or detour...',
+  },
+  {
+    id: 'blocked',
+    label: 'Path blocked',
+    desc: 'Construction, fallen branches, or barriers blocking the walkway',
+    placeholder: 'Describe what is blocking the path and exact spot...',
+  },
   {
     id: 'unwalkable',
     label: 'Unwalkable',
     desc: 'Surface, gradient or obstruction makes this path unsafe to use',
+    placeholder: 'Describe why this path is unsafe or unwalkable...',
   },
-  { id: 'uneven', label: 'Broken or uneven surface' },
-  { id: 'other', label: 'Something else' },
+  {
+    id: 'uneven',
+    label: 'Broken or uneven surface',
+    desc: 'Cracked tiles, potholes, or uneven steps posing a tripping hazard',
+    placeholder: 'Describe the surface damage and where to watch out...',
+  },
+  {
+    id: 'other',
+    label: 'Something else',
+    desc: 'Any other accessibility or safety issue along this route',
+    placeholder: 'Describe the hazard in detail so other walkers know what to expect...',
+  },
 ];
 
 export default function FeedReportScreen({ navigation }: any) {
   // Section Feed Report Logic
   const { auth, origin } = useApp();
   const [selectedCategory, setSelectedCategory] = useState<HazardType>('unwalkable');
+  const [description, setDescription] = useState<string>('');
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const blockReason = !auth.isAuthenticated
@@ -41,6 +68,7 @@ export default function FeedReportScreen({ navigation }: any) {
         hazard_type: selectedCategory,
         latitude: origin.latitude,
         longitude: origin.longitude,
+        description: description.trim(),
       });
       Alert.alert('Hazard Logged', 'Thanks — your hazard report has been logged.', [
         { text: 'OK', onPress: () => navigation.goBack() },
@@ -72,17 +100,34 @@ export default function FeedReportScreen({ navigation }: any) {
                 key={category.id}
                 style={[styles.feedReport_innerOptionCard, isSelected && styles.feedReport_innerOptionCard_selected]}
                 onPress={() => setSelectedCategory(category.id)}
-                activeOpacity={0.8}
+                activeOpacity={0.85}
               >
-                <View style={styles.feedReport_innerOptionTextCol}>
-                  <Text style={styles.feedReport_innerOptionLabel}>{category.label}</Text>
-                  {category.desc && (
+                <View style={styles.feedReport_innerOptionTopRow}>
+                  <View style={styles.feedReport_innerOptionTextCol}>
+                    <Text style={styles.feedReport_innerOptionLabel}>{category.label}</Text>
                     <Text style={styles.feedReport_innerOptionDesc}>{category.desc}</Text>
-                  )}
+                  </View>
+                  <View style={[styles.feedReport_innerRadioCircle, isSelected && styles.feedReport_innerRadioCircle_selected]}>
+                    {isSelected && <View style={styles.feedReport_innerRadioDot} />}
+                  </View>
                 </View>
-                <View style={[styles.feedReport_innerRadioCircle, isSelected && styles.feedReport_innerRadioCircle_selected]}>
-                  {isSelected && <View style={styles.feedReport_innerRadioDot} />}
-                </View>
+
+                {isSelected && (
+                  <View style={styles.feedReport_innerDescBox}>
+                    <Text style={styles.feedReport_innerDescLabel}>Report description</Text>
+                    <TextInput
+                      style={styles.feedReport_innerDescInput}
+                      value={description}
+                      onChangeText={setDescription}
+                      placeholder={category.placeholder}
+                      placeholderTextColor="#8c8470"
+                      multiline
+                      maxLength={500}
+                      editable={!submitting}
+                      textAlignVertical="top"
+                    />
+                  </View>
+                )}
               </TouchableOpacity>
             );
           })}

@@ -21,9 +21,15 @@ from src.schemas.route_schema import (
     RouteSearchOut,
     RouteSearchRequest,
     RouteVariantSummary,
+    WeatherContextOut,
 )
 from src.services.adapters.ors_routing_adapter import OrsRoutingAdapter
 from src.services.adapters.pedestrian_routing_adapter import PedestrianRouteData
+from src.services.adapters.weather_adapter import (
+    WeatherAdapter,
+    WeatherCondition,
+    WeatherSnapshot,
+)
 from src.services.route_types import RouteFactory
 from src.utils.index import (
     clamp,
@@ -76,10 +82,11 @@ def build_avoid_polygons(
     profile: ProfileModel,
     origin_coord: tuple[float, float],
     destination_coord: tuple[float, float],
-    buffer_meters: float = 25.0,
+    buffer_meters: float = 55.0,
 ) -> list[list[list[list[float]]]]:
     avoid_polygons: list[list[list[list[float]]]] = []
     delta_deg = buffer_meters / 111000.0
+    doorstep_threshold = max(35.0, buffer_meters * 1.45)
 
     for h in hazards:
         if not should_avoid_hazard(h, profile):
@@ -87,10 +94,10 @@ def build_avoid_polygons(
         h_lat = float(h.location.coordinates[1])
         h_lng = float(h.location.coordinates[0])
 
-        # Skip doorstep hazards (< 35m from start or end) to avoid ORS routing errors
+        # Skip doorstep hazards (< doorstep_threshold from start or end) to avoid ORS routing errors
         if (
-            haversine_distance((h_lat, h_lng), origin_coord) < 35.0
-            or haversine_distance((h_lat, h_lng), destination_coord) < 35.0
+            haversine_distance((h_lat, h_lng), origin_coord) < doorstep_threshold
+            or haversine_distance((h_lat, h_lng), destination_coord) < doorstep_threshold
         ):
             continue
 
@@ -116,12 +123,14 @@ class RouteService:
         profile_repo: ProfileRepository,
         hazard_repo: HazardRepository | None = None,
         routing_adapter: OrsRoutingAdapter | None = None,
+        weather_adapter: WeatherAdapter | None = None,
     ) -> None:
         self._map_segment_repo = map_segment_repo
         self._route_repo = route_repo
         self._profile_repo = profile_repo
         self._hazard_repo = hazard_repo
         self._routing_adapter = routing_adapter or OrsRoutingAdapter()
+        self._weather_adapter = weather_adapter
 
     def calculate_match_score(
         self,
@@ -129,6 +138,7 @@ class RouteService:
         profile: ProfileModel,
         *,
         segments: list[MapSegmentModel] | None = None,
+        weather: WeatherSnapshot | None = None,
     ) -> float:
         route_segments = segments or []
 
@@ -167,7 +177,7 @@ class RouteService:
         else:
             score_confidence = NEUTRAL_CONFIDENCE_SCORE
 
-        weights = self._select_weights(profile)
+        weights = self._select_weights(profile, weather=weather)
         score = gate * (
             weights["efficiency"] * score_efficiency
             + weights["shelter"] * score_shelter
@@ -191,6 +201,31 @@ class RouteService:
             route.is_starred = index == 0
         return ranked
 
+    async def get_weather_context(
+        self,
+        user_id: PydanticObjectId,
+        coord: tuple[float, float],
+        weather_override: WeatherCondition | None = None,
+    ) -> WeatherContextOut:
+        profile = await self._profile_repo.find_by_user_id(user_id=user_id)
+        if profile is None:
+            profile = await self._profile_repo.create(user_id=user_id)
+
+        target_coord = coord if is_within_singapore(*coord) else (1.3521, 103.8198)
+        adapter = self._weather_adapter or WeatherAdapter()
+        snapshot = await adapter.get_weather(target_coord, override=weather_override)
+        weights = self._select_weights(profile, weather=snapshot)
+
+        return WeatherContextOut(
+            condition=snapshot.condition,
+            forecast_text=snapshot.forecast_text,
+            temperature_c=snapshot.temperature_c,
+            area_name=snapshot.area_name,
+            advisory_message=snapshot.advisory_message,
+            shelter_weight_pct=round(weights["shelter"] * 100),
+            is_simulated=snapshot.is_simulated,
+        )
+
     async def generate_routes(
         self, user_id: PydanticObjectId, payload: RouteSearchRequest
     ) -> RouteSearchOut:
@@ -204,6 +239,18 @@ class RouteService:
         profile = await self._profile_repo.find_by_user_id(user_id=user_id)
         if profile is None:
             profile = await self._profile_repo.create(user_id=user_id)
+
+        weather_snapshot: WeatherSnapshot | None = None
+        if self._weather_adapter is not None or payload.weather_override is not None:
+            adapter = self._weather_adapter or WeatherAdapter()
+            try:
+                weather_snapshot = await adapter.get_weather(
+                    payload.origin_coord,
+                    override=payload.weather_override,
+                )
+            except Exception as exc:
+                logger.warning("Weather adapter error: %s", exc)
+                weather_snapshot = None
 
         candidates = await self._map_segment_repo.find_segments_in_bbox(
             min_lat=min(payload.origin_coord[0], payload.destination_coord[0])
@@ -256,6 +303,7 @@ class RouteService:
         except Exception as exc:
             logger.warning("Routing adapter base route error: %s", exc)
 
+        allow_via_fetch = not bool(avoid_polygons)
         routes: list[RouteModel] = []
         for route_type in RouteType:
             strategy = RouteFactory.get(route_type)()
@@ -268,6 +316,7 @@ class RouteService:
                 base_routes=base_routes,
                 candidate_segments=candidates,
                 segments=candidates,
+                allow_via_fetch=allow_via_fetch,
             )
             route_segments = [
                 segments_by_id[sid]
@@ -278,6 +327,7 @@ class RouteService:
                 route,
                 profile,
                 segments=route_segments,
+                weather=weather_snapshot,
             )
 
             # Tag route with active hazards still intersecting the path
@@ -303,9 +353,23 @@ class RouteService:
         for route in ranked:
             await self._route_repo.create(route=route)
 
+        weather_out: WeatherContextOut | None = None
+        if weather_snapshot is not None:
+            active_weights = self._select_weights(profile, weather=weather_snapshot)
+            weather_out = WeatherContextOut(
+                condition=weather_snapshot.condition,
+                forecast_text=weather_snapshot.forecast_text,
+                temperature_c=weather_snapshot.temperature_c,
+                area_name=weather_snapshot.area_name,
+                advisory_message=weather_snapshot.advisory_message,
+                shelter_weight_pct=round(active_weights["shelter"] * 100),
+                is_simulated=weather_snapshot.is_simulated,
+            )
+
         return RouteSearchOut(
             starred_route=self._to_summary(ranked[0]),
             alternative_routes=[self._to_summary(route) for route in ranked[1:]],
+            weather=weather_out,
         )
 
     async def find_route(self, route_id: PydanticObjectId) -> RouteDetailOut:
@@ -334,7 +398,11 @@ class RouteService:
             is_starred=route.is_starred,
         )
 
-    def _select_weights(self, profile: ProfileModel) -> dict[str, float]:
+    def _select_weights(
+        self,
+        profile: ProfileModel,
+        weather: WeatherSnapshot | None = None,
+    ) -> dict[str, float]:
         # weff = 0.25
         w_eff = 0.25
 
@@ -356,6 +424,19 @@ class RouteService:
 
         # wconf = 0.15
         w_conf = 0.15
+
+        # Dynamic weather-driven weight adjustments
+        if weather is not None:
+            if weather.condition == WeatherCondition.THUNDERY:
+                w_shelter += 0.40
+                w_conf += 0.05
+                w_eff = max(0.10, w_eff - 0.05)
+            elif weather.condition == WeatherCondition.RAINY:
+                w_shelter += 0.30
+                w_eff = max(0.10, w_eff - 0.05)
+            elif weather.condition == WeatherCondition.HOT_SUNNY:
+                w_shelter += 0.18
+                w_effort += 0.08
 
         raw_weights = {
             "efficiency": w_eff,

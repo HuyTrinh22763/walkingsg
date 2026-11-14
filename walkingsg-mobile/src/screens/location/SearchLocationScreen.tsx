@@ -10,6 +10,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useApp } from '../../context/AppContext';
 import type { LocationResponse, PointType } from '../../types/location';
@@ -196,47 +197,50 @@ export default function SearchLocationScreen({ navigation, onContinue }: SearchL
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Where are you walking?</Text>
+    <SafeAreaView style={styles.safeArea}>
+      <View style={styles.container}>
+        <Text style={styles.title}>Where are you walking?</Text>
 
-      <LocationField
-        label="Origin"
-        placeholder="Search a place, address or postal code"
-        isSelected={origin !== null}
-        isLocked={isLoading}
-        initialValue={origin?.address_label}
-        onSelect={(location) => handleSelect('origin', location)}
-        onClear={() => clearLocation('origin')}
-      />
+        <LocationField
+          label="Origin"
+          placeholder="Search a place, address or postal code"
+          isSelected={origin !== null}
+          isLocked={isLoading}
+          initialValue={origin?.address_label}
+          onSelect={(location) => handleSelect('origin', location)}
+          onClear={() => clearLocation('origin')}
+        />
 
-      <LocationField
-        label="Destination"
-        placeholder="Search a place, address or postal code"
-        isSelected={destination !== null}
-        isLocked={isLoading}
-        initialValue={destination?.address_label}
-        onSelect={(location) => handleSelect('destination', location)}
-        onClear={() => clearLocation('destination')}
-      />
+        <LocationField
+          label="Destination"
+          placeholder="Search a place, address or postal code"
+          isSelected={destination !== null}
+          isLocked={isLoading}
+          initialValue={destination?.address_label}
+          onSelect={(location) => handleSelect('destination', location)}
+          onClear={() => clearLocation('destination')}
+        />
 
-      <Pressable
-        style={[styles.button, !canContinue && styles.buttonDisabled]}
-        onPress={handleFindRoutes}
-        disabled={!canContinue}
-        accessibilityRole="button"
-      >
-        {isLoading ? (
-          <ActivityIndicator color="#FFFFFF" />
-        ) : (
-          <Text style={styles.buttonText}>Find walking routes</Text>
-        )}
-      </Pressable>
-    </View>
+        <Pressable
+          style={[styles.button, !canContinue && styles.buttonDisabled]}
+          onPress={handleFindRoutes}
+          disabled={!canContinue}
+          accessibilityRole="button"
+        >
+          {isLoading ? (
+            <ActivityIndicator color="#FFFFFF" />
+          ) : (
+            <Text style={styles.buttonText}>Find walking routes</Text>
+          )}
+        </Pressable>
+      </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, backgroundColor: '#FFFFFF' },
+  safeArea: { flex: 1, backgroundColor: '#FFFFFF' },
+  container: { flex: 1, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 16, backgroundColor: '#FFFFFF' },
   title: { fontSize: 22, fontWeight: '600', marginBottom: 16, color: '#111827' },
   field: { marginBottom: 16, zIndex: 1 },
   label: { fontSize: 14, fontWeight: '500', marginBottom: 6, color: '#374151' },

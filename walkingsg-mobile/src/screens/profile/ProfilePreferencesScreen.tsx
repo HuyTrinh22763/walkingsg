@@ -9,11 +9,14 @@ import type { PreferredPace } from '../../types/profile';
 import { styles } from './ProfilePreferencesScreen.styles';
 
 const PACES: PreferredPace[] = ['Slow', 'Relaxed', 'Brisk'];
+const DURATIONS: Array<'15 min' | '30 min' | '45 min' | '60 min'> = ['15 min', '30 min', '45 min', '60 min'];
 
 export default function ProfilePreferencesScreen({ navigation }: any) {
   // Section Profile Preferences State
   const { user, updateUser, saveProfile } = useApp();
   const [isSaving, setIsSaving] = useState(false);
+  const [isPaceDropdownOpen, setIsPaceDropdownOpen] = useState(false);
+  const [isDurationDropdownOpen, setIsDurationDropdownOpen] = useState(false);
   const isWheelchair = user.mobilityMode === 'Wheelchair';
 
   const handleSave = async () => {
@@ -33,9 +36,14 @@ export default function ProfilePreferencesScreen({ navigation }: any) {
     updateUser({ age: Number.isNaN(parsed) ? null : parsed });
   };
 
-  const handleCyclePace = () => {
-    const nextIdx = (PACES.indexOf(user.preferredPace) + 1) % PACES.length;
-    updateUser({ preferredPace: PACES[nextIdx] });
+  const handleSelectPace = (pace: PreferredPace) => {
+    updateUser({ preferredPace: pace });
+    setIsPaceDropdownOpen(false);
+  };
+
+  const handleSelectDuration = (duration: '15 min' | '30 min' | '45 min' | '60 min') => {
+    updateUser({ maxDuration: duration });
+    setIsDurationDropdownOpen(false);
   };
   // End Section Profile Preferences State
 
@@ -169,32 +177,101 @@ export default function ProfilePreferencesScreen({ navigation }: any) {
             <View style={styles.profilePreferences_innerFieldHalf}>
               <Text style={styles.profilePreferences_innerLabel}>Preferred pace</Text>
               <TouchableOpacity
-                style={styles.profilePreferences_innerPickerBtn}
-                onPress={handleCyclePace}
+                style={[
+                  styles.profilePreferences_innerPickerBtn,
+                  isPaceDropdownOpen && styles.profilePreferences_innerPickerBtn_open,
+                ]}
+                onPress={() => {
+                  setIsPaceDropdownOpen(prev => !prev);
+                  setIsDurationDropdownOpen(false);
+                }}
                 disabled={isSaving}
                 activeOpacity={0.8}
               >
                 <Text style={{ fontSize: 13, fontWeight: '600', color: ThemeColors.ink }}>{user.preferredPace}</Text>
-                <Text style={{ fontSize: 10, color: ThemeColors.inkSoft }}>▼</Text>
+                <Text style={{ fontSize: 10, color: ThemeColors.inkSoft }}>{isPaceDropdownOpen ? '▲' : '▼'}</Text>
               </TouchableOpacity>
+
+              {isPaceDropdownOpen && (
+                <View style={styles.profilePreferences_innerDropdownMenu}>
+                  {PACES.map((pace, idx) => {
+                    const isSelected = user.preferredPace === pace;
+                    const isLast = idx === PACES.length - 1;
+                    return (
+                      <TouchableOpacity
+                        key={pace}
+                        style={[
+                          styles.profilePreferences_innerDropdownItem,
+                          isSelected && styles.profilePreferences_innerDropdownItem_selected,
+                          isLast && styles.profilePreferences_innerDropdownItem_last,
+                        ]}
+                        onPress={() => handleSelectPace(pace)}
+                        activeOpacity={0.75}
+                      >
+                        <Text
+                          style={[
+                            styles.profilePreferences_innerDropdownItemText,
+                            isSelected && styles.profilePreferences_innerDropdownItemText_selected,
+                          ]}
+                        >
+                          {pace}
+                        </Text>
+                        {isSelected && <Text style={styles.profilePreferences_innerDropdownCheck}>✓</Text>}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              )}
             </View>
 
             <View style={styles.profilePreferences_innerFieldHalf}>
               <Text style={styles.profilePreferences_innerLabel}>Max duration</Text>
               <TouchableOpacity
-                style={styles.profilePreferences_innerPickerBtn}
+                style={[
+                  styles.profilePreferences_innerPickerBtn,
+                  isDurationDropdownOpen && styles.profilePreferences_innerPickerBtn_open,
+                ]}
                 onPress={() => {
-                  const durations: Array<'15 min' | '30 min' | '45 min' | '60 min'> = ['15 min', '30 min', '45 min', '60 min'];
-                  const curIdx = durations.indexOf(user.maxDuration);
-                  const nextDuration = durations[(curIdx + 1) % durations.length];
-                  updateUser({ maxDuration: nextDuration });
+                  setIsDurationDropdownOpen(prev => !prev);
+                  setIsPaceDropdownOpen(false);
                 }}
                 disabled={isSaving}
                 activeOpacity={0.8}
               >
                 <Text style={{ fontSize: 13, fontWeight: '600', color: ThemeColors.ink }}>{user.maxDuration}</Text>
-                <Text style={{ fontSize: 10, color: ThemeColors.inkSoft }}>▼</Text>
+                <Text style={{ fontSize: 10, color: ThemeColors.inkSoft }}>{isDurationDropdownOpen ? '▲' : '▼'}</Text>
               </TouchableOpacity>
+
+              {isDurationDropdownOpen && (
+                <View style={styles.profilePreferences_innerDropdownMenu}>
+                  {DURATIONS.map((duration, idx) => {
+                    const isSelected = user.maxDuration === duration;
+                    const isLast = idx === DURATIONS.length - 1;
+                    return (
+                      <TouchableOpacity
+                        key={duration}
+                        style={[
+                          styles.profilePreferences_innerDropdownItem,
+                          isSelected && styles.profilePreferences_innerDropdownItem_selected,
+                          isLast && styles.profilePreferences_innerDropdownItem_last,
+                        ]}
+                        onPress={() => handleSelectDuration(duration)}
+                        activeOpacity={0.75}
+                      >
+                        <Text
+                          style={[
+                            styles.profilePreferences_innerDropdownItemText,
+                            isSelected && styles.profilePreferences_innerDropdownItemText_selected,
+                          ]}
+                        >
+                          {duration}
+                        </Text>
+                        {isSelected && <Text style={styles.profilePreferences_innerDropdownCheck}>✓</Text>}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              )}
             </View>
           </View>
 

@@ -28,6 +28,12 @@ VARIANT_BUFFER_METRES = 60.0
 class BaseRouteStrategy(ABC):
     route_type: ClassVar[RouteType]
     _adapter: PedestrianRoutingAdapter = PedestrianRoutingAdapter()
+    _via_route_cache: ClassVar[
+        dict[
+            tuple[float, float, float, float, float, float],
+            list[PedestrianRouteData],
+        ]
+    ] = {}
 
     @abstractmethod
     # generate_route interface for 5-variant routes
@@ -47,6 +53,7 @@ class BaseRouteStrategy(ABC):
         base_routes: list[PedestrianRouteData] | None = None,
         candidate_segments: list[MapSegmentModel] | None = None,
         segments: list[MapSegmentModel] | None = None,
+        allow_via_fetch: bool = True,
     ) -> RouteModel: ...
 
     async def _get_base_route(
@@ -102,24 +109,44 @@ class BaseRouteStrategy(ABC):
         destination_coord: tuple[float, float],
         preferred_index: int = 0,
         via_coord: tuple[float, float] | None = None,
+        allow_via_fetch: bool = True,
     ) -> list[PedestrianRouteData]:
         candidates = list(base_routes) if base_routes else []
 
-        needs_via_fetch = via_coord is not None and not any(
-            distance_to_polyline(via_coord, r.polyline) <= 80.0
-            for r in candidates
+        needs_via_fetch = (
+            allow_via_fetch
+            and via_coord is not None
+            and not any(
+                distance_to_polyline(via_coord, r.polyline) <= 80.0
+                for r in candidates
+            )
         )
-        if needs_via_fetch:
-            try:
-                via_routes = await self._adapter.get_pedestrian_route(
-                    origin_coord=origin_coord,
-                    destination_coord=destination_coord,
-                    via_coord=via_coord,
-                )
-                if via_routes:
-                    candidates.extend(via_routes)
-            except Exception as exc:
-                logger.warning("Adapter via-route fetch failed: %s", exc)
+        if needs_via_fetch and via_coord is not None:
+            cache_key = (
+                round(origin_coord[0], 5),
+                round(origin_coord[1], 5),
+                round(destination_coord[0], 5),
+                round(destination_coord[1], 5),
+                round(via_coord[0], 5),
+                round(via_coord[1], 5),
+            )
+            cached = self._via_route_cache.get(cache_key)
+            if cached is not None:
+                candidates.extend(cached)
+            else:
+                try:
+                    via_routes = await self._adapter.get_pedestrian_route(
+                        origin_coord=origin_coord,
+                        destination_coord=destination_coord,
+                        via_coord=via_coord,
+                    )
+                    if via_routes:
+                        if len(self._via_route_cache) >= 128:
+                            self._via_route_cache.clear()
+                        self._via_route_cache[cache_key] = via_routes
+                        candidates.extend(via_routes)
+                except Exception as exc:
+                    logger.warning("Adapter via-route fetch failed: %s", exc)
 
         if candidates:
             return candidates
@@ -233,25 +260,148 @@ class BaseRouteStrategy(ABC):
             else set()
         )
 
-        candidates: list[tuple[int, float, float, float, MapSegmentModel]] = []
-        for seg in all_segments:
-            arc_s, dist_s = self._project_onto_polyline(seg.start_coordinates, polyline)
-            if dist_s > buffer_meters:
-                continue
-            arc_e, dist_e = self._project_onto_polyline(seg.end_coordinates, polyline)
-            if dist_e > buffer_meters:
-                continue
+        if len(polyline) == 1:
+            candidates_single: list[tuple[int, float, float, float, MapSegmentModel]] = []
+            only_pt = (polyline[0][0], polyline[0][1])
+            for seg in all_segments:
+                dist_s = haversine_distance(seg.start_coordinates, only_pt)
+                if dist_s > buffer_meters:
+                    continue
+                dist_e = haversine_distance(seg.end_coordinates, only_pt)
+                if dist_e > buffer_meters:
+                    continue
+                seg_len = haversine_distance(seg.start_coordinates, seg.end_coordinates)
+                if seg_len > 5.0:
+                    continue
+                priority = 0 if seg.segment_id in pref_ids else 1
+                candidates_single.append(
+                    (priority, (dist_s + dist_e) / 2.0, 0.0, 0.0, seg)
+                )
+            candidates = candidates_single
+        else:
+            # Precompute polyline bounding box + edge projection constants once per call.
+            # +15m safety cushion guarantees zero borderline segments can ever be pruned early.
+            lats = [pt[0] for pt in polyline]
+            lngs = [pt[1] for pt in polyline]
+            min_lat, max_lat = min(lats), max(lats)
+            min_lng, max_lng = min(lngs), max(lngs)
 
-            span_start = min(arc_s, arc_e)
-            span_end = max(arc_s, arc_e)
-            span_len = span_end - span_start
-            seg_len = haversine_distance(seg.start_coordinates, seg.end_coordinates)
-            if seg_len > 5.0 and span_len < 0.3 * seg_len:
-                continue
+            lat_margin = (buffer_meters + 15.0) / 110540.0
+            max_abs_lat = max(abs(min_lat), abs(max_lat)) + 0.01
+            cos_lat = max(0.01, math.cos(math.radians(max_abs_lat)))
+            lng_margin = (buffer_meters + 15.0) / (110540.0 * cos_lat)
 
-            priority = 0 if seg.segment_id in pref_ids else 1
-            avg_dist = (dist_s + dist_e) / 2.0
-            candidates.append((priority, avg_dist, span_start, span_end, seg))
+            p_min_lat = min_lat - lat_margin
+            p_max_lat = max_lat + lat_margin
+            p_min_lng = min_lng - lng_margin
+            p_max_lng = max_lng + lng_margin
+
+            deg_lat = 111320.0
+            edge_strips: dict[
+                int,
+                list[
+                    tuple[
+                        float, float, float, float, float, float, float,
+                        float, float, float, float, float, float, float,
+                    ]
+                ],
+            ] = {}
+            cumulative = 0.0
+            for i in range(len(polyline) - 1):
+                a_lat, a_lng = polyline[i][0], polyline[i][1]
+                b_lat, b_lng = polyline[i + 1][0], polyline[i + 1][1]
+                edge_len = haversine_distance((a_lat, a_lng), (b_lat, b_lng))
+                deg_lng = 111320.0 * math.cos(math.radians((a_lat + b_lat) / 2.0))
+                d_lat = b_lat - a_lat
+                d_lng = b_lng - a_lng
+                dx = d_lng * deg_lng
+                dy = d_lat * deg_lat
+                len_sq = dx * dx + dy * dy
+                e_min_lat = (a_lat if a_lat < b_lat else b_lat) - lat_margin
+                e_max_lat = (a_lat if a_lat > b_lat else b_lat) + lat_margin
+                e_min_lng = (a_lng if a_lng < b_lng else b_lng) - lng_margin
+                e_max_lng = (a_lng if a_lng > b_lng else b_lng) + lng_margin
+                edge_entry = (
+                    a_lat, a_lng, d_lat, d_lng, deg_lng, dx, dy,
+                    len_sq, edge_len, cumulative,
+                    e_min_lat, e_max_lat, e_min_lng, e_max_lng,
+                )
+                for strip in range(
+                    math.floor(e_min_lat * 500.0),
+                    math.floor(e_max_lat * 500.0) + 1,
+                ):
+                    edge_strips.setdefault(strip, []).append(edge_entry)
+                cumulative += edge_len
+
+            def _project_fast(pt: tuple[float, float]) -> tuple[float, float]:
+                pt_lat, pt_lng = pt
+                bucket = edge_strips.get(math.floor(pt_lat * 500.0))
+                if not bucket:
+                    return 0.0, float("inf")
+                best_dist = float("inf")
+                best_arc = 0.0
+                for (
+                    a_lat, a_lng, d_lat, d_lng, deg_lng, dx, dy,
+                    len_sq, edge_len, cum_arc,
+                    e_min_lat, e_max_lat, e_min_lng, e_max_lng,
+                ) in bucket:
+                    if (
+                        pt_lat < e_min_lat
+                        or pt_lat > e_max_lat
+                        or pt_lng < e_min_lng
+                        or pt_lng > e_max_lng
+                    ):
+                        continue
+                    if len_sq <= 1e-6:
+                        t = 0.0
+                        proj = (a_lat, a_lng)
+                    else:
+                        px = (pt_lng - a_lng) * deg_lng
+                        py = (pt_lat - a_lat) * deg_lat
+                        t = float(clamp((px * dx + py * dy) / len_sq, 0.0, 1.0))
+                        proj = (a_lat + t * d_lat, a_lng + t * d_lng)
+                    dist = haversine_distance(pt, proj)
+                    if dist < best_dist:
+                        best_dist = dist
+                        best_arc = cum_arc + t * edge_len
+                return best_arc, best_dist
+
+            candidates = []
+            for seg in all_segments:
+                s_coord = seg.start_coordinates
+                if (
+                    s_coord[0] < p_min_lat
+                    or s_coord[0] > p_max_lat
+                    or s_coord[1] < p_min_lng
+                    or s_coord[1] > p_max_lng
+                ):
+                    continue
+                e_coord = seg.end_coordinates
+                if (
+                    e_coord[0] < p_min_lat
+                    or e_coord[0] > p_max_lat
+                    or e_coord[1] < p_min_lng
+                    or e_coord[1] > p_max_lng
+                ):
+                    continue
+
+                arc_s, dist_s = _project_fast(s_coord)
+                if dist_s > buffer_meters:
+                    continue
+                arc_e, dist_e = _project_fast(e_coord)
+                if dist_e > buffer_meters:
+                    continue
+
+                span_start = min(arc_s, arc_e)
+                span_end = max(arc_s, arc_e)
+                span_len = span_end - span_start
+                seg_len = haversine_distance(s_coord, e_coord)
+                if seg_len > 5.0 and span_len < 0.3 * seg_len:
+                    continue
+
+                priority = 0 if seg.segment_id in pref_ids else 1
+                avg_dist = (dist_s + dist_e) / 2.0
+                candidates.append((priority, avg_dist, span_start, span_end, seg))
 
         candidates.sort(key=lambda item: (item[0], item[1]))
 
@@ -353,6 +503,7 @@ class DirectRouteStrategy(BaseRouteStrategy):
         base_routes: list[PedestrianRouteData] | None = None,
         candidate_segments: list[MapSegmentModel] | None = None,
         segments: list[MapSegmentModel] | None = None,
+        allow_via_fetch: bool = True,
     ) -> RouteModel:
         all_segments = candidate_segments if candidate_segments is not None else (segments or [])
         if base_routes:
@@ -403,6 +554,7 @@ class MaxShelterRouteStrategy(BaseRouteStrategy):
         base_routes: list[PedestrianRouteData] | None = None,
         candidate_segments: list[MapSegmentModel] | None = None,
         segments: list[MapSegmentModel] | None = None,
+        allow_via_fetch: bool = True,
     ) -> RouteModel:
         all_segments = candidate_segments if candidate_segments is not None else (segments or [])
         sheltered = [s for s in all_segments if s.is_sheltered]
@@ -418,6 +570,7 @@ class MaxShelterRouteStrategy(BaseRouteStrategy):
             destination_coord,
             preferred_index=0,
             via_coord=shelter_wp,
+            allow_via_fetch=allow_via_fetch,
         )
         base_route = max(
             candidates,
@@ -484,6 +637,7 @@ class BarrierFreeRouteStrategy(BaseRouteStrategy):
         base_routes: list[PedestrianRouteData] | None = None,
         candidate_segments: list[MapSegmentModel] | None = None,
         segments: list[MapSegmentModel] | None = None,
+        allow_via_fetch: bool = True,
     ) -> RouteModel:
         all_segments = candidate_segments if candidate_segments is not None else (segments or [])
         barrier_free = [s for s in all_segments if s.is_barrier_free and s.stair_count == 0]
@@ -512,6 +666,7 @@ class BarrierFreeRouteStrategy(BaseRouteStrategy):
             destination_coord,
             preferred_index=0,
             via_coord=ramp_wp,
+            allow_via_fetch=allow_via_fetch,
         )
         base_route = min(candidates, key=_barrier_cost)
 
@@ -567,6 +722,7 @@ class LowEffortRouteStrategy(BaseRouteStrategy):
         base_routes: list[PedestrianRouteData] | None = None,
         candidate_segments: list[MapSegmentModel] | None = None,
         segments: list[MapSegmentModel] | None = None,
+        allow_via_fetch: bool = True,
     ) -> RouteModel:
         all_segments = candidate_segments if candidate_segments is not None else (segments or [])
         flat = [s for s in all_segments if s.stair_count == 0]
@@ -591,6 +747,7 @@ class LowEffortRouteStrategy(BaseRouteStrategy):
             destination_coord,
             preferred_index=0,
             via_coord=flat_wp,
+            allow_via_fetch=allow_via_fetch,
         )
         base_route = min(candidates, key=_effort_cost)
 
@@ -646,6 +803,7 @@ class WideQuietRouteStrategy(BaseRouteStrategy):
         base_routes: list[PedestrianRouteData] | None = None,
         candidate_segments: list[MapSegmentModel] | None = None,
         segments: list[MapSegmentModel] | None = None,
+        allow_via_fetch: bool = True,
     ) -> RouteModel:
         all_segments = candidate_segments if candidate_segments is not None else (segments or [])
         high_conf = [s for s in all_segments if s.confidence_score >= 0.0]
@@ -668,6 +826,7 @@ class WideQuietRouteStrategy(BaseRouteStrategy):
             origin_coord,
             destination_coord,
             preferred_index=1,
+            allow_via_fetch=allow_via_fetch,
         )
         base_route = max(
             enumerate(candidates),
