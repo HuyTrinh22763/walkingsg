@@ -82,10 +82,11 @@ def build_avoid_polygons(
     profile: ProfileModel,
     origin_coord: tuple[float, float],
     destination_coord: tuple[float, float],
-    buffer_meters: float = 25.0,
+    buffer_meters: float = 55.0,
 ) -> list[list[list[list[float]]]]:
     avoid_polygons: list[list[list[list[float]]]] = []
     delta_deg = buffer_meters / 111000.0
+    doorstep_threshold = max(35.0, buffer_meters * 1.45)
 
     for h in hazards:
         if not should_avoid_hazard(h, profile):
@@ -93,10 +94,10 @@ def build_avoid_polygons(
         h_lat = float(h.location.coordinates[1])
         h_lng = float(h.location.coordinates[0])
 
-        # Skip doorstep hazards (< 35m from start or end) to avoid ORS routing errors
+        # Skip doorstep hazards (< doorstep_threshold from start or end) to avoid ORS routing errors
         if (
-            haversine_distance((h_lat, h_lng), origin_coord) < 35.0
-            or haversine_distance((h_lat, h_lng), destination_coord) < 35.0
+            haversine_distance((h_lat, h_lng), origin_coord) < doorstep_threshold
+            or haversine_distance((h_lat, h_lng), destination_coord) < doorstep_threshold
         ):
             continue
 
