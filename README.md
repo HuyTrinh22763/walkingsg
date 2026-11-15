@@ -28,10 +28,13 @@
 ![Use Case Diagram](<Lab 5/UseCaseDiagram-Final.jpeg>)
 
 ### System Class Diagram
-![System Class Diagram](<Lab 3/ClassDiagram_Final_ver2.drawio.jpeg>)
+![System Class Diagram](<Lab 5/ClassDiagram_Final_ver2.drawio.jpeg>)
 
-### Entity Class Diagram
-![Entity Class Diagram](<Lab 2/ClassDiagram(Entities).jpeg>)
+### Route Generation Class Diagram
+![Route Generation Class Diagram](<Lab 5/ClassDiagram_RouteGeneration.jpeg>)
+
+### Live Navigation & Rerouting Class Diagram
+![Rerouting Class Diagram](<Lab 5/ClassDiagram_Rerouting.jpeg>)
 
 ### App UI Screens
 
@@ -106,23 +109,27 @@ npx expo start -c
 cd walkingsg-backend
 python -m pytest -v
 
-# Mobile TypeScript check
+# Mobile unit tests (Jest) & TypeScript check
 cd ../walkingsg-mobile
+npm test
 npx tsc --noEmit
 ```
 
 ---
 
-## Core Documentation
+## Core Documentation (`Lab 5/`)
 
+- **Software Requirements Specification (SRS):** [WalkingSG_SRS.pdf](<Lab 5/WalkingSG_SRS.pdf>)
+- **Backend Test Report:** [WalkingSG_Backend_Test_Report.pdf](<Lab 5/WalkingSG_Backend_Test_Report.pdf>)
+- **Frontend Test Report:** [WalkingSG_Frontend_Test_Report.pdf](<Lab 5/WalkingSG_Frontend_Test_Report.pdf>)
 - **Demo Video:** [WalkingSG_Demo_Video.mp4](<Lab 5/WalkingSG_Demo_Video.mp4>)
-- **Software Requirements Specification (SRS):** [SRS_Group3_SCS2_Lab4.pdf](<Lab 4/SRS_Group3_SCS2_Lab4.pdf>)
-- **Demo Script & Final Presentation:** [Demo Script.pdf](<Lab 4/Demo Script.pdf>) · [WalkingSG Final Presentation.pdf](<Lab 4/WalkingSG Final Presentation (Street Map).pdf>)
+- **Diagrams:** [DialogMap-Final.jpeg](<Lab 5/DialogMap-Final.jpeg>) · [UseCaseDiagram-Final.jpeg](<Lab 5/UseCaseDiagram-Final.jpeg>) · [ClassDiagram_Final_ver2.drawio.jpeg](<Lab 5/ClassDiagram_Final_ver2.drawio.jpeg>) · [ClassDiagram_RouteGeneration.jpeg](<Lab 5/ClassDiagram_RouteGeneration.jpeg>) · [ClassDiagram_Rerouting.jpeg](<Lab 5/ClassDiagram_Rerouting.jpeg>)
+- **UI Screens:** [`Lab 5/UI/`](<Lab 5/UI>)
 
 ---
 
 ## Project Structure
 
 - [`walkingsg-backend/`](./walkingsg-backend) — FastAPI REST server, routing strategies, external API adapters, and `pytest` suite
-- [`walkingsg-mobile/`](./walkingsg-mobile) — React Native (Expo) app
-- [`Lab 1/`](<Lab 1>) · [`Lab 2/`](<Lab 2>) · [`Lab 3/`](<Lab 3>) · [`Lab 4/`](<Lab 4>) · [`Lab 5/`](<Lab 5>) — Project documentation & diagrams
+- [`walkingsg-mobile/`](./walkingsg-mobile) — React Native (Expo) app and Jest test suite
+- [`Lab 5/`](<Lab 5>) — Final SRS, test reports, demo video, system diagrams, and UI screens (earlier iterations in [`Lab 1/`](<Lab 1>) – [`Lab 4/`](<Lab 4>))

@@ -57,18 +57,19 @@ class HazardService:
     async def restore_expired_hazards(self) -> int:
         cutoff = utc_now() - HAZARD_TTL
         expired = await self._hazard_repo.find_expired_active_hazards(cutoff=cutoff)
-        restored = 0
+        if not expired:
+            return 0
+        # One call marks every expired hazard, then one call per affected segment
+        # gives back the confidence points (same result as one hazard at a time).
+        await self._hazard_repo.mark_expired(hazard_ids=[hazard.id for hazard in expired])
+        per_segment: dict[str, int] = {}
         for hazard in expired:
-            updated = await self._hazard_repo.set_status(
-                hazard_id=hazard.id, status=HazardStatus.EXPIRED
-            )
-            if updated is None:
-                continue
+            per_segment[hazard.segment_id] = per_segment.get(hazard.segment_id, 0) + 1
+        for segment_id, count in per_segment.items():
             await self._map_segment_repo.adjust_confidence(
-                segment_id=hazard.segment_id, delta=HAZARD_PENALTY
+                segment_id=segment_id, delta=HAZARD_PENALTY * count
             )
-            restored += 1
-        return restored
+        return len(expired)
 
     async def get_nearby_hazards(
         self, *, latitude: float, longitude: float

@@ -61,7 +61,7 @@ export default function RouteOptionsScreen({ navigation }: any) {
   const sortedRoutes = [...routes].sort((a, b) => {
     if (selectedSort === 'stairs') return a.stairs - b.stairs;
     if (selectedSort === 'shade') return b.shadePct - a.shadePct;
-    return b.matchPct - a.matchPct;
+    return 0; // keep the backend order: fewest hazards, then highest match score (REQ-RTE-05.1)
   });
 
   const handleSelectRoute = (route: RouteModel) => {

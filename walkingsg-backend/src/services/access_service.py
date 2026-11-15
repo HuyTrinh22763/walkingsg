@@ -114,7 +114,10 @@ class AccessService:
 
         now = utc_now()
         if user.is_locked:
-            if user.lock_expires_at and user.lock_expires_at > now:
+            lock_exp = user.lock_expires_at
+            if lock_exp and lock_exp.tzinfo is None:
+                lock_exp = lock_exp.replace(tzinfo=now.tzinfo)
+            if lock_exp and lock_exp > now:
                 raise ForbiddenError(
                     "Account locked for 15 minutes due to multiple failed attempts"
                 )
@@ -125,6 +128,10 @@ class AccessService:
         creds = await self._credentials_repo.find_by_user_id(user_id=user.id)
         if creds is None:
             raise AuthFailureError("Invalid email or password")
+        if user.is_locked:
+            # lock has expired: start counting failed tries from zero again
+            await self._credentials_repo.reset_failed_attempts(credentials_id=creds.id)
+            creds.failed_login_attempts = 0
 
         is_valid = await verify_password(payload.password, creds.password_hash)
         if not is_valid:

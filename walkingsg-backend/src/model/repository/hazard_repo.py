@@ -49,6 +49,14 @@ class HazardRepository:
             }
         ).to_list()
 
+    async def mark_expired(self, *, hazard_ids: list[PydanticObjectId]) -> None:
+        """Mark many hazards EXPIRED in one database call."""
+        if not hazard_ids:
+            return
+        await HazardModel.find(
+            {"_id": {"$in": hazard_ids}, "hazard_status": HazardStatus.ACTIVE}
+        ).update({"$set": {"hazard_status": HazardStatus.EXPIRED}})
+
     async def set_status(
         self, *, hazard_id: PydanticObjectId, status: HazardStatus
     ) -> HazardModel | None:
