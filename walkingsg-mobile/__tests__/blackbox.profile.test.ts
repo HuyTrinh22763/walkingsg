@@ -1,99 +1,30 @@
-jest.mock('react-native', () => ({ Alert: { alert: jest.fn() } }), { virtual: true });
-jest.mock('expo-location', () => ({}), { virtual: true });
-jest.mock('../src/services/authService', () => ({ authService: {} }));
-jest.mock('../src/services/profileService', () => ({ profileService: {} }));
-jest.mock('../src/services/routeService', () => ({ routeService: {} }));
-jest.mock('../src/services/navigationService', () => ({ navigationService: {} }));
-jest.mock('../src/services/locationService', () => ({ locationService: {} }));
-
 import { toProfileUpdateRequest } from '../src/context/AppContext';
-import type { UserPreferences } from '../src/context/AppContext';
-import { outcome, record, show } from './helpers';
-
-const baseUser: UserPreferences = {
-  fullName: 'Hemanth Nukala',
-  email: 'test@example.com',
-  age: 20,
-  mobilityMode: 'None',
-  maxStairs: 10,
-  heatSensitivity: 'Medium',
-  preferredPace: 'Relaxed',
-  maxDuration: '45 min',
-  isDeclared: true,
-};
-
-const NAME_ERROR = 'Please enter a valid username (2–50 characters)';
-const AGE_ERROR = 'Please enter a valid age';
-
-function run(id: string, user: UserPreferences) {
-  const result = outcome(() => toProfileUpdateRequest(user));
-  record(id, result.error !== undefined ? `Error: ${result.error}` : show(result.value));
-  return result;
-}
-
-describe('BB: AppContext profile validation (toProfileUpdateRequest)', () => {
-  test('BB-01 valid name and age', () => {
-    const r = run('BB-01', baseUser);
-    expect(r.value).toEqual({
-      name: 'Hemanth Nukala',
-      age: 20,
-      mobility_needs: 'None',
-      heat_uv_sensitivity: 'Medium',
-      max_stairs_per_route: 10,
-      preferred_pace: 'Relaxed',
-    });
-  });
-
-  test('BB-02 name of 1 character (just below lower boundary)', () => {
-    expect(run('BB-02', { ...baseUser, fullName: 'A' }).error).toBe(NAME_ERROR);
-  });
-
-  test('BB-03 name of 2 characters (lower boundary)', () => {
-    expect(run('BB-03', { ...baseUser, fullName: 'Al' }).value?.name).toBe('Al');
-  });
-
-  test('BB-04 name of 50 characters (upper boundary)', () => {
-    const name = 'a'.repeat(50);
-    expect(run('BB-04', { ...baseUser, fullName: name }).value?.name).toBe(name);
-  });
-
-  test('BB-05 name of 51 characters (just above upper boundary)', () => {
-    expect(run('BB-05', { ...baseUser, fullName: 'a'.repeat(51) }).error).toBe(NAME_ERROR);
-  });
-
-  test('BB-06 empty name', () => {
-    expect(run('BB-06', { ...baseUser, fullName: '' }).error).toBe(NAME_ERROR);
-  });
-
-  test('BB-07 whitespace-only name', () => {
-    expect(run('BB-07', { ...baseUser, fullName: '     ' }).error).toBe(NAME_ERROR);
-  });
-
-  test('BB-08 surrounding spaces are trimmed before the length check', () => {
-    expect(run('BB-08', { ...baseUser, fullName: '  Al  ' }).value?.name).toBe('Al');
-  });
-
-  test('BB-09 age is null', () => {
-    expect(run('BB-09', { ...baseUser, age: null }).error).toBe(AGE_ERROR);
-  });
-
-  test('BB-10 age 0 (lower boundary): accepted', () => {
-    expect(run('BB-10', { ...baseUser, age: 0 }).value?.age).toBe(0);
-  });
-
-  test('BB-11 age 1 (just above lower boundary): accepted', () => {
-    expect(run('BB-11', { ...baseUser, age: 1 }).value?.age).toBe(1);
-  });
-
-  test('BB-12 age -1 (just below lower boundary): rejected', () => {
-    expect(run('BB-12', { ...baseUser, age: -1 }).error).toBe(AGE_ERROR);
-  });
-
-  test('BB-13 age 120 (upper boundary): accepted', () => {
-    expect(run('BB-13', { ...baseUser, age: 120 }).value?.age).toBe(120);
-  });
-
-  test('BB-14 age 121 (just above upper boundary): rejected', () => {
-    expect(run('BB-14', { ...baseUser, age: 121 }).error).toBe(AGE_ERROR);
+import { record } from './record';
+const N_ERR = 'Please enter a valid username (2–50 characters)';
+const A_ERR = 'Please enter a valid age';
+const base: any = { fullName: 'Hemanth Nukala', email: 'h@example.com', age: 20, dateOfBirth: null, isOnboarded: true,
+  mobilityMode: 'None', maxStairs: 10, heatSensitivity: 'Medium', preferredPace: 'Relaxed', maxDuration: '45 min', isDeclared: true };
+function run(over: any) { try { return { ok: toProfileUpdateRequest({ ...base, ...over }) as any }; } catch (e: any) { return { err: e.message }; } }
+const cases: [string, string, any, string, (r: any) => boolean, (r: any) => string][] = [
+  ['MBB-01', 'All fields valid', {}, 'Request with all six fields mapped',
+    r => r.ok && Object.keys(r.ok).length === 6 && r.ok.name === 'Hemanth Nukala' && r.ok.age === 20 && r.ok.mobility_needs === 'None' && r.ok.heat_uv_sensitivity === 'Medium' && r.ok.max_stairs_per_route === 10 && r.ok.preferred_pace === 'Relaxed',
+    r => r.ok ? `Request returned, ${Object.keys(r.ok).length} fields, name "${r.ok.name}", age ${r.ok.age}` : r.err],
+  ['MBB-02', 'Name "A" (1 character)', { fullName: 'A' }, 'N-ERR', r => r.err === N_ERR, r => r.err ? 'N-ERR' : 'accepted'],
+  ['MBB-03', 'Name "Al" (2 characters)', { fullName: 'Al' }, 'Request returned', r => r.ok?.name === 'Al', r => r.ok ? `Request returned, name "${r.ok.name}"` : r.err],
+  ['MBB-04', 'Name of 50 characters', { fullName: 'a'.repeat(50) }, 'Request returned', r => r.ok?.name.length === 50, r => r.ok ? `Request returned, ${r.ok.name.length}-character name` : r.err],
+  ['MBB-05', 'Name of 51 characters', { fullName: 'a'.repeat(51) }, 'N-ERR', r => r.err === N_ERR, r => r.err ? 'N-ERR' : 'accepted'],
+  ['MBB-06', 'Empty name', { fullName: '' }, 'N-ERR', r => r.err === N_ERR, r => r.err ? 'N-ERR' : 'accepted'],
+  ['MBB-07', 'Name of 5 spaces', { fullName: '     ' }, 'N-ERR', r => r.err === N_ERR, r => r.err ? 'N-ERR' : 'accepted'],
+  ['MBB-08', 'Name " Al "', { fullName: ' Al ' }, 'Trimmed to "Al"', r => r.ok?.name === 'Al', r => r.ok ? `Request returned, name "${r.ok.name}"` : r.err],
+  ['MBB-09', 'Age null', { age: null }, 'A-ERR', r => r.err === A_ERR, r => r.err ? 'A-ERR' : 'accepted'],
+  ['MBB-10', 'Age 0 (lower limit)', { age: 0 }, 'Request returned', r => r.ok?.age === 0, r => r.ok ? `Request returned, age ${r.ok.age}` : r.err],
+  ['MBB-11', 'Age 1', { age: 1 }, 'Request returned', r => r.ok?.age === 1, r => r.ok ? `Request returned, age ${r.ok.age}` : r.err],
+  ['MBB-12', 'Age -1 (just below limit)', { age: -1 }, 'A-ERR', r => r.err === A_ERR, r => r.err ? 'A-ERR' : 'accepted'],
+  ['MBB-13', 'Age 120 (upper limit)', { age: 120 }, 'Request returned', r => r.ok?.age === 120, r => r.ok ? `Request returned, age ${r.ok.age}` : r.err],
+  ['MBB-14', 'Age 121 (just above limit)', { age: 121 }, 'A-ERR', r => r.err === A_ERR, r => r.err ? 'A-ERR' : 'accepted'],
+];
+describe('toProfileUpdateRequest (black-box)', () => {
+  test.each(cases)('%s %s', (id, input, over, expected, check, show) => {
+    const r = run(over); const pass = check(r); record(id, input, expected, show(r), pass); expect(pass).toBe(true);
   });
 });

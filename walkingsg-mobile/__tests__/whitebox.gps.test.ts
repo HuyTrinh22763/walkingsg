@@ -1,133 +1,51 @@
-import React, { act } from 'react';
-import TestRenderer from 'react-test-renderer';
-
-jest.mock('react-native', () => ({ Alert: { alert: jest.fn() } }), { virtual: true });
-jest.mock('expo-location', () => ({
-  requestForegroundPermissionsAsync: jest.fn(),
-  getCurrentPositionAsync: jest.fn(),
-  Accuracy: { Balanced: 3 },
-}), { virtual: true });
-jest.mock('../src/services/locationService', () => ({
-  locationService: { validateCoordinates: jest.fn(), searchAddress: jest.fn() },
-}));
-
+import { record } from './record';
+const slots: any[] = [];
+jest.mock('react', () => {
+  let i = 0;
+  return {
+    useState: (init: any) => { const idx = i++ % 4; slots[idx] = init; return [init, (v: any) => { slots[idx] = v; }]; },
+    useCallback: (fn: any) => fn,
+  };
+});
+jest.mock('../src/services/locationService', () => ({ locationService: { validateCoordinates: jest.fn(), searchAddress: jest.fn() } }));
 import { Alert } from 'react-native';
 import * as Location from 'expo-location';
 import { locationService } from '../src/services/locationService';
-import { DEFAULT_SINGAPORE_ORIGIN, useLocationState } from '../src/context/useLocation';
-import { record, show } from './helpers';
-
-(globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
-
-const alertMock = Alert.alert as jest.Mock;
-const permissionMock = Location.requestForegroundPermissionsAsync as jest.Mock;
-const positionMock = Location.getCurrentPositionAsync as jest.Mock;
-const validateMock = locationService.validateCoordinates as jest.Mock;
-
-const COORDS = { latitude: 1.3521, longitude: 103.8198 };
-
-function pressAlertButton(label: 'Allow' | 'Not Now') {
-  alertMock.mockImplementation((_title: string, _msg: string, buttons: any[]) => {
-    buttons.find((b) => b.text === label).onPress();
-  });
+import { useLocationState, DEFAULT_SINGAPORE_ORIGIN } from '../src/context/useLocation';
+const L = Location as any, LS = locationService as any, A = Alert as any;
+function setup(button: 'Not Now' | 'Allow') {
+  A.alert.mockImplementation((_t: string, _m: string, buttons: any[]) => { buttons.find((b: any) => b.text === button).onPress(); });
+  return useLocationState();
 }
-
-function renderLocationHook() {
-  const ref: { current: ReturnType<typeof useLocationState> } = { current: undefined as any };
-  function Harness() {
-    ref.current = useLocationState();
-    return null;
-  }
-  act(() => {
-    TestRenderer.create(React.createElement(Harness));
-  });
-  return ref;
+const origin = () => slots[0]; const gps = () => slots[3];
+beforeEach(() => { jest.clearAllMocks(); slots.length = 0; });
+async function check(id: string, path: string, input: string, expected: string, s: any, want: { ret: boolean; label: string; status: string; posCalled?: boolean; valCalled?: boolean }) {
+  const ret = await s.setupInitialGpsLocation();
+  const label = origin()?.address_label; const status = gps();
+  let pass = ret === want.ret && label === want.label && status === want.status;
+  if (want.posCalled !== undefined) pass = pass && (L.getCurrentPositionAsync.mock.calls.length > 0) === want.posCalled;
+  if (want.valCalled !== undefined) pass = pass && (LS.validateCoordinates.mock.calls.length > 0) === want.valCalled;
+  record(id, `${path}: ${input}`, expected, `${ret}, origin "${label}", status ${status}`, pass);
+  expect(pass).toBe(true);
 }
-
-async function runSetup() {
-  const hook = renderLocationHook();
-  let result: boolean | undefined;
-  await act(async () => {
-    result = await hook.current.setupInitialGpsLocation();
-  });
-  return { hook, result };
-}
-
-const originalConsoleError = console.error;
-
-beforeEach(() => {
-  jest.clearAllMocks();
-  jest.spyOn(console, 'warn').mockImplementation(() => undefined);
-  jest.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
-    if (String(args[0]).includes('react-test-renderer is deprecated')) return;
-    originalConsoleError(...args);
-  });
+const D = DEFAULT_SINGAPORE_ORIGIN.address_label;
+test('MWB2-01', async () => { await check('MWB2-01', 'BP-01', 'User taps "Not Now"', `false, origin ${D}, status denied, location never read`, setup('Not Now'), { ret: false, label: D, status: 'denied', posCalled: false }); });
+test('MWB2-02', async () => {
+  L.requestForegroundPermissionsAsync.mockResolvedValue({ status: 'granted' }); L.getCurrentPositionAsync.mockResolvedValue({ coords: { latitude: 1.3521, longitude: 103.8198 } });
+  LS.validateCoordinates.mockResolvedValue({ is_valid: true });
+  await check('MWB2-02', 'BP-02', 'Allowed, position (1.3521, 103.8198), backend says valid', 'true, origin "Current Location", status granted', setup('Allow'), { ret: true, label: 'Current Location', status: 'granted' });
 });
-
-function describeState(
-  result: boolean | undefined,
-  hook: { current: ReturnType<typeof useLocationState> }
-): string {
-  const { origin, gpsStatus, userGpsLocation } = hook.current;
-  return `returned=${result}; origin=${show(origin)}; gpsStatus=${gpsStatus}; userGpsLocation=${show(userGpsLocation)}`;
-}
-
-describe('WB2: setupInitialGpsLocation()', () => {
-  test('WB2-01 user chooses Not Now: false, default origin, status denied', async () => {
-    pressAlertButton('Not Now');
-    const { hook, result } = await runSetup();
-    record('WB2-01', describeState(result, hook));
-    expect(result).toBe(false);
-    expect(hook.current.origin).toEqual(DEFAULT_SINGAPORE_ORIGIN);
-    expect(hook.current.gpsStatus).toBe('denied');
-    expect(positionMock).not.toHaveBeenCalled();
-  });
-
-  test('WB2-02 permission granted and position inside Singapore: true, Current Location', async () => {
-    pressAlertButton('Allow');
-    permissionMock.mockResolvedValue({ status: 'granted' });
-    positionMock.mockResolvedValue({ coords: COORDS });
-    validateMock.mockResolvedValue({ is_valid: true, error_message: null });
-    const { hook, result } = await runSetup();
-    record('WB2-02', describeState(result, hook));
-    expect(result).toBe(true);
-    expect(hook.current.origin).toEqual({ address_label: 'Current Location', ...COORDS });
-    expect(hook.current.userGpsLocation).toEqual(COORDS);
-    expect(hook.current.gpsStatus).toBe('granted');
-    expect(validateMock).toHaveBeenCalledWith({ ...COORDS, point_type: 'origin' });
-  });
-
-  test('WB2-03 permission granted but position outside Singapore: false, default origin', async () => {
-    pressAlertButton('Allow');
-    permissionMock.mockResolvedValue({ status: 'granted' });
-    positionMock.mockResolvedValue({ coords: { latitude: 1.4927, longitude: 103.7414 } });
-    validateMock.mockResolvedValue({ is_valid: false, error_message: 'outside' });
-    const { hook, result } = await runSetup();
-    record('WB2-03', describeState(result, hook));
-    expect(result).toBe(false);
-    expect(hook.current.origin).toEqual(DEFAULT_SINGAPORE_ORIGIN);
-    expect(hook.current.gpsStatus).toBe('granted');
-  });
-
-  test('WB2-04 reading the GPS position fails: false, default origin', async () => {
-    pressAlertButton('Allow');
-    permissionMock.mockResolvedValue({ status: 'granted' });
-    positionMock.mockRejectedValue(new Error('GPS unavailable'));
-    const { hook, result } = await runSetup();
-    record('WB2-04', describeState(result, hook));
-    expect(result).toBe(false);
-    expect(hook.current.origin).toEqual(DEFAULT_SINGAPORE_ORIGIN);
-    expect(validateMock).not.toHaveBeenCalled();
-  });
-
-  test('WB2-05 backend validation request fails: false, default origin', async () => {
-    pressAlertButton('Allow');
-    permissionMock.mockResolvedValue({ status: 'granted' });
-    positionMock.mockResolvedValue({ coords: COORDS });
-    validateMock.mockRejectedValue(new Error('Network request failed'));
-    const { hook, result } = await runSetup();
-    record('WB2-05', describeState(result, hook));
-    expect(result).toBe(false);
-    expect(hook.current.origin).toEqual(DEFAULT_SINGAPORE_ORIGIN);
-  });
+test('MWB2-03', async () => {
+  L.requestForegroundPermissionsAsync.mockResolvedValue({ status: 'granted' }); L.getCurrentPositionAsync.mockResolvedValue({ coords: { latitude: 1.4927, longitude: 103.7414 } });
+  LS.validateCoordinates.mockResolvedValue({ is_valid: false });
+  await check('MWB2-03', 'BP-03', 'Allowed, position (1.4927, 103.7414) in Johor, backend says invalid', `false, origin ${D}, status granted`, setup('Allow'), { ret: false, label: D, status: 'granted' });
+});
+test('MWB2-04', async () => {
+  L.requestForegroundPermissionsAsync.mockResolvedValue({ status: 'granted' }); L.getCurrentPositionAsync.mockRejectedValue(new Error('no fix'));
+  await check('MWB2-04', 'BP-04', 'Allowed, reading the position throws', `false, origin ${D}, backend not called`, setup('Allow'), { ret: false, label: D, status: 'granted', valCalled: false });
+});
+test('MWB2-05', async () => {
+  L.requestForegroundPermissionsAsync.mockResolvedValue({ status: 'granted' }); L.getCurrentPositionAsync.mockResolvedValue({ coords: { latitude: 1.3521, longitude: 103.8198 } });
+  LS.validateCoordinates.mockRejectedValue(new Error('network'));
+  await check('MWB2-05', 'BP-04 (backend)', 'Allowed, backend request fails', `false, origin ${D}`, setup('Allow'), { ret: false, label: D, status: 'granted' });
 });

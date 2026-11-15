@@ -1,49 +1,19 @@
-import { calculateDistanceAlongRoute, haversineDistance } from '../src/utils/routeUtils';
-import { record } from './helpers';
-
-type Coord = [number, number];
-
-// Points on one meridian: each 0.001 degree of latitude is about 111.3 m.
-const P0: Coord = [1.35, 103.68];
-const P1: Coord = [1.351, 103.68];
-const P2: Coord = [1.352, 103.68];
-const SEGMENT_M = 111.32;
-
-function run(id: string, from: Coord, target: Coord, polyline: Coord[] | null): number {
-  const d = calculateDistanceAlongRoute(from, target, polyline as Coord[]);
-  record(id, `${d.toFixed(1)} m`);
-  return d;
-}
-
-describe('WB1: calculateDistanceAlongRoute()', () => {
-  test('WB1-01 polyline is null: straight-line distance', () => {
-    const d = run('WB1-01', P0, P2, null);
-    expect(d).toBeCloseTo(haversineDistance(P0, P2), 6);
-    expect(d).toBeCloseTo(2 * SEGMENT_M, 0);
-  });
-
-  test('WB1-02 target one segment ahead of start: one segment length', () => {
-    expect(run('WB1-02', P0, P1, [P0, P1, P2])).toBeCloseTo(SEGMENT_M, 0);
-  });
-
-  test('WB1-03 target two segments ahead: two segment lengths', () => {
-    expect(run('WB1-03', P0, P2, [P0, P1, P2])).toBeCloseTo(2 * SEGMENT_M, 0);
-  });
-
-  test('WB1-04 start and target nearest the same vertex: 0 m along the route', () => {
-    const targetNearP1: Coord = [1.35105, 103.68];
-    expect(run('WB1-04', P1, targetNearP1, [P0, P1, P2])).toBe(0);
-  });
-
-  test('WB1-05 target is behind start on the route: straight-line distance', () => {
-    expect(run('WB1-05', P2, P0, [P0, P1, P2])).toBeCloseTo(2 * SEGMENT_M, 0);
-  });
-
-  test('WB1-06 two-point polyline, target one segment ahead: one segment length', () => {
-    expect(run('WB1-06', P0, P1, [P0, P1])).toBeCloseTo(SEGMENT_M, 0);
-  });
-
-  test('WB1-07 two-point polyline, target behind start: straight-line distance', () => {
-    expect(run('WB1-07', P1, P0, [P0, P1])).toBeCloseTo(SEGMENT_M, 0);
+import { calculateDistanceAlongRoute } from '../src/utils/routeUtils';
+import { record } from './record';
+const P0: [number, number] = [1.3, 103.8], P1: [number, number] = [1.301, 103.8], P2: [number, number] = [1.302, 103.8];
+const r1 = (x: number) => Math.round(x * 10) / 10;
+const near = (a: number, b: number) => Math.abs(a - b) < 0.2;
+describe('calculateDistanceAlongRoute (basis paths)', () => {
+  const cases: [string, string, string, () => number, number, string][] = [
+    ['MWB1-01', 'BP-01', 'Polyline null, P0 to P2', () => calculateDistanceAlongRoute(P0, P2, null as any), 222.6, 'Straight line, about 222.6 m'],
+    ['MWB1-02', 'BP-02', '3-point polyline, P0 to P1', () => calculateDistanceAlongRoute(P0, P1, [P0, P1, P2]), 111.3, 'One segment, about 111.3 m'],
+    ['MWB1-03', 'BP-03', '3-point polyline, P0 to P2', () => calculateDistanceAlongRoute(P0, P2, [P0, P1, P2]), 222.6, 'Two segments, about 222.6 m'],
+    ['MWB1-04', 'BP-04', 'Start and target nearest P1', () => calculateDistanceAlongRoute([1.30101, 103.8], [1.30099, 103.8], [P0, P1, P2]), 0, '0 m'],
+    ['MWB1-05', 'BP-05', 'Start P2, target P0 (behind)', () => calculateDistanceAlongRoute(P2, P0, [P0, P1, P2]), 222.6, 'Straight line, about 222.6 m'],
+    ['MWB1-06', 'BP-06', '2-point polyline, P0 to P1', () => calculateDistanceAlongRoute(P0, P1, [P0, P1]), 111.3, 'One segment, about 111.3 m'],
+    ['MWB1-07', 'BP-07', '2-point polyline, P1 to P0 (behind)', () => calculateDistanceAlongRoute(P1, P0, [P0, P1]), 111.3, 'Straight line, about 111.3 m'],
+  ];
+  test.each(cases)('%s', (id, bp, input, fn, want, expected) => {
+    const v = fn(); const pass = near(v, want); record(id, `${bp}: ${input}`, expected, `${r1(v)} m`, pass); expect(pass).toBe(true);
   });
 });

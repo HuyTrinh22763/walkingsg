@@ -1,0 +1,12 @@
+{
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "esModuleInterop": true,
+    "target": "es2020",
+    "module": "commonjs",
+    "allowJs": true,
+    "skipLibCheck": true,
+    "types": ["jest", "node"]
+  },
+  "include": ["__tests__", "src"]
+}

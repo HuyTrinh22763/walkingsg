@@ -1,19 +1,12 @@
 module.exports = {
   testEnvironment: 'node',
-  testMatch: ['<rootDir>/__tests__/**/*.test.ts'],
+  roots: ['<rootDir>/__tests__'],
+  testMatch: ['**/*.test.ts'],
   transform: {
-    '^.+\\.tsx?$': [
-      'ts-jest',
-      {
-        diagnostics: false,
-        tsconfig: {
-          jsx: 'react-jsx',
-          module: 'commonjs',
-          target: 'es2020',
-          esModuleInterop: true,
-          skipLibCheck: true,
-        },
-      },
-    ],
+    '^.+\\.(ts|tsx)$': ['ts-jest', { isolatedModules: true, tsconfig: '<rootDir>/tsconfig.jest.json' }],
+  },
+  moduleNameMapper: {
+    '^react-native$': '<rootDir>/stubs/react-native.js',
+    '^expo-location$': '<rootDir>/stubs/expo-location.js',
   },
 };
