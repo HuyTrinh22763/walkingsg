@@ -167,7 +167,7 @@ function toUserPreferences(profile: ProfileResponse, prev: UserPreferences): Use
   };
 }
 
-function toProfileUpdateRequest(
+export function toProfileUpdateRequest(
   user: UserPreferences,
   explicitDob?: string
 ): ProfileUpdateRequest {
