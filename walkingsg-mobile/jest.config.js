@@ -3,7 +3,7 @@ module.exports = {
   roots: ['<rootDir>/__tests__'],
   testMatch: ['**/*.test.ts'],
   transform: {
-    '^.+\\.(ts|tsx)$': ['ts-jest', { isolatedModules: true, tsconfig: '<rootDir>/tsconfig.jest.json' }],
+    '^.+\\.(ts|tsx)$': ['ts-jest', { tsconfig: '<rootDir>/tsconfig.jest.json' }],
   },
   moduleNameMapper: {
     '^react-native$': '<rootDir>/stubs/react-native.js',
