@@ -2,7 +2,7 @@
 
 **WalkingSG** is a pedestrian-first mobile navigation app for Singapore. It generates **5 walking route options** per trip (*Direct, Maximum Shelter, Barrier-Free, Low-Effort, Wide & Quiet*) and ranks them using the user's mobility profile, live **NEA weather forecasts**, and **community-reported path hazards**.
 
-🎥 **[Watch the WalkingSG Demo Video](<Lab 5/WalkingSG_Demo_Video.mp4>)**
+🎥 **Demo Video:** **[Watch on YouTube](https://youtu.be/lphMU399R8c)** · **[MP4 in Repo (`Lab 5/WalkingSG_Demo_Video.mp4`)](<Lab 5/WalkingSG_Demo_Video.mp4>)**
 
 ---
 
@@ -122,7 +122,7 @@ npx tsc --noEmit
 - **Software Requirements Specification (SRS):** [WalkingSG_SRS.pdf](<Lab 5/WalkingSG_SRS.pdf>)
 - **Backend Test Report:** [WalkingSG_Backend_Test_Report.pdf](<Lab 5/WalkingSG_Backend_Test_Report.pdf>)
 - **Frontend Test Report:** [WalkingSG_Frontend_Test_Report.pdf](<Lab 5/WalkingSG_Frontend_Test_Report.pdf>)
-- **Demo Video:** [WalkingSG_Demo_Video.mp4](<Lab 5/WalkingSG_Demo_Video.mp4>)
+- **Demo Video:** [Watch on YouTube](https://youtu.be/lphMU399R8c) · [WalkingSG_Demo_Video.mp4](<Lab 5/WalkingSG_Demo_Video.mp4>)
 - **Diagrams:** [DialogMap-Final.jpeg](<Lab 5/DialogMap-Final.jpeg>) · [UseCaseDiagram-Final.jpeg](<Lab 5/UseCaseDiagram-Final.jpeg>) · [ClassDiagram_Final_ver2.drawio.jpeg](<Lab 5/ClassDiagram_Final_ver2.drawio.jpeg>) · [ClassDiagram_RouteGeneration.jpeg](<Lab 5/ClassDiagram_RouteGeneration.jpeg>) · [ClassDiagram_Rerouting.jpeg](<Lab 5/ClassDiagram_Rerouting.jpeg>)
 - **UI Screens:** [`Lab 5/UI/`](<Lab 5/UI>)
 
