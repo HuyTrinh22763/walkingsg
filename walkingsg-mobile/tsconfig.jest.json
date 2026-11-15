@@ -1,5 +1,7 @@
 {
   "compilerOptions": {
+    "rootDir": ".",
+    "isolatedModules": true,
     "jsx": "react-jsx",
     "esModuleInterop": true,
     "target": "es2020",
