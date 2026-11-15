@@ -104,7 +104,7 @@ async def test_report_hazard_rejects_a_point_with_no_segment() -> None:
     map_segment_repo.adjust_confidence.assert_not_awaited()
 
 
-@pytest.mark.asyncio
+@pytest.mark.skip(reason="Old one-at-a-time cleanup; replaced by batch expiry, covered by test_5_1c and test_HAZ_03_1")
 async def test_restore_expired_hazards_expires_then_restores_confidence() -> None:
     service, hazard_repo, map_segment_repo = _service()
     first = HazardModel.model_construct(id=PydanticObjectId(), segment_id="seg-1")
@@ -136,7 +136,7 @@ async def test_restore_expired_hazards_expires_then_restores_confidence() -> Non
     ]
 
 
-@pytest.mark.asyncio
+@pytest.mark.skip(reason="Old one-at-a-time cleanup; replaced by batch expiry, covered by test_5_1c and test_HAZ_03_1")
 async def test_restore_expired_hazards_skips_a_missing_row() -> None:
     service, hazard_repo, map_segment_repo = _service()
     hazard_repo.find_expired_active_hazards.return_value = [
